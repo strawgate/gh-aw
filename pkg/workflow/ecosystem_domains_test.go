@@ -184,6 +184,8 @@ func TestEcosystemDomainExpansion(t *testing.T) {
 			"yarnpkg.com",
 			"bun.sh",
 			"deno.land",
+			"jsr.io",
+			"*.jsr.io",
 		}
 
 		for _, expectedDomain := range expectedDomains {
