@@ -16,7 +16,6 @@ permissions:
 roles: [admin, maintainer, write]
 engine: claude
 imports:
-  - github/github-deep-research-agent@main
   - shared/reporting.md
   - shared/mcp/arxiv.md
   - shared/mcp/tavily.md

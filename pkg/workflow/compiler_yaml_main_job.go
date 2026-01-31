@@ -56,7 +56,6 @@ func (c *Compiler) generateMainJobSteps(yaml *strings.Builder, data *WorkflowDat
 	if needsGithubMerge {
 		compilerYamlLog.Printf("Adding merge remote .github folder step")
 		yaml.WriteString("      - name: Merge remote .github folder\n")
-		yaml.WriteString("        if: ${{ always() }}\n")
 		fmt.Fprintf(yaml, "        uses: %s\n", GetActionPin("actions/github-script"))
 		yaml.WriteString("        env:\n")
 
@@ -505,8 +504,8 @@ func (c *Compiler) addCustomStepsWithRuntimeInsertion(yaml *strings.Builder, cus
 }
 
 // generateRepositoryImportCheckouts generates checkout steps for repository imports
-// Each repository is checked out into a temporary folder at /tmp/gh-aw/repo-imports/<owner>-<repo>-<sanitized-ref>
-// This allows the merge script to copy files from pre-checked-out folders instead of doing git operations
+// Each repository is checked out into a temporary folder at .github/aw/imports/<owner>-<repo>-<sanitized-ref>
+// relative to GITHUB_WORKSPACE. This allows the merge script to copy files from pre-checked-out folders instead of doing git operations
 func (c *Compiler) generateRepositoryImportCheckouts(yaml *strings.Builder, repositoryImports []string) {
 	for _, repoImport := range repositoryImports {
 		compilerYamlLog.Printf("Generating checkout step for repository import: %s", repoImport)
@@ -521,8 +520,9 @@ func (c *Compiler) generateRepositoryImportCheckouts(yaml *strings.Builder, repo
 
 		// Generate a sanitized directory name for the checkout
 		// Use a consistent format: owner-repo-ref
+		// NOTE: Path must be relative to GITHUB_WORKSPACE for actions/checkout@v6
 		sanitizedRef := sanitizeRefForPath(ref)
-		checkoutPath := fmt.Sprintf("/tmp/gh-aw/repo-imports/%s-%s-%s", owner, repo, sanitizedRef)
+		checkoutPath := fmt.Sprintf(".github/aw/imports/%s-%s-%s", owner, repo, sanitizedRef)
 
 		// Generate the checkout step
 		fmt.Fprintf(yaml, "      - name: Checkout repository import %s/%s@%s\n", owner, repo, ref)
