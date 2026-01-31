@@ -31,14 +31,20 @@ engine:
 
 Configuration options: `model` (gpt-5 or claude-sonnet-4), `version` (CLI version), `args` (command-line arguments). Alternatively set model via `COPILOT_MODEL` environment variable.
 
-Create a fine-grained PAT at <https://github.com/settings/personal-access-tokens/new>. Select your user account (not an organization), choose "Public repositories" access, and enable "Copilot Requests" permissions. Then add it to your repository:
+Create a fine-grained PAT at <https://github.com/settings/personal-access-tokens/new>.
 
-> [!NOTE]
-> You should leave "Public repositories" enabled; otherwise, you will not have access to the Copilot Requests permission option.
+- **IMPORTANT:** Select your user account, NOT an organization
+- **IMPORTANT:** Choose "Public repositories" access, even if adding to a private repo. Yes that's right just do it
+- **IMPORTANT:** Enable "Copilot Requests" permissions.
+
+Then add it to your repository:
 
 ```bash wrap
 gh aw secrets set COPILOT_GITHUB_TOKEN --value "<your-github-pat>"
 ```
+
+> [!NOTE]
+> You **must** have "Public repositories" selected; otherwise, you will not have access to the Copilot Requests permission option.
 
 ### Required Secrets
 
