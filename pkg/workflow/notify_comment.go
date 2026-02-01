@@ -151,7 +151,16 @@ func (c *Compiler) buildConclusionJob(data *WorkflowData, mainJobName string, sa
 	agentFailureEnvVars = append(agentFailureEnvVars, buildWorkflowMetadataEnvVarsWithTrackerID(data.Name, data.Source, data.TrackerID)...)
 	agentFailureEnvVars = append(agentFailureEnvVars, "          GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n")
 	agentFailureEnvVars = append(agentFailureEnvVars, fmt.Sprintf("          GH_AW_AGENT_CONCLUSION: ${{ needs.%s.result }}\n", mainJobName))
-	agentFailureEnvVars = append(agentFailureEnvVars, fmt.Sprintf("          GH_AW_SECRET_VERIFICATION_RESULT: ${{ needs.%s.outputs.secret_verification_result }}\n", mainJobName))
+
+	// Only add secret_verification_result if the engine adds the validate-secret step
+	// The validate-secret step is only added by engines that include it in GetInstallationSteps()
+	engine, err := c.getAgenticEngine(data.AI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agentic engine: %w", err)
+	}
+	if EngineHasValidateSecretStep(engine, data) {
+		agentFailureEnvVars = append(agentFailureEnvVars, fmt.Sprintf("          GH_AW_SECRET_VERIFICATION_RESULT: ${{ needs.%s.outputs.secret_verification_result }}\n", mainJobName))
+	}
 
 	// Pass assignment error outputs from safe_outputs job if assign-to-agent is configured
 	if data.SafeOutputs != nil && data.SafeOutputs.AssignToAgent != nil {
