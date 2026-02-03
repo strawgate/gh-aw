@@ -24,13 +24,13 @@ func TestParseGitHubRepoSlugFromURL(t *testing.T) {
 		},
 		{
 			name:     "SSH URL with .git",
-			url:      "git@github.com:githubnext/gh-aw.git",
-			expected: "githubnext/gh-aw",
+			url:      "git@github.com:github/gh-aw.git",
+			expected: "github/gh-aw",
 		},
 		{
 			name:     "SSH URL without .git",
-			url:      "git@github.com:githubnext/gh-aw",
-			expected: "githubnext/gh-aw",
+			url:      "git@github.com:github/gh-aw",
+			expected: "github/gh-aw",
 		},
 		{
 			name:     "Invalid URL",
