@@ -1,3 +1,14 @@
+<!--
+
+Hello fellow agent! Welcome to GitHub Agentic Workflows = Actions + Agent + Safety. 
+Here are some pointers to get you started in using this tool.
+
+- Create a new workflow: https://raw.githubusercontent.com/github/gh-aw/main/create.md
+- Install: https://raw.githubusercontent.com/github/gh-aw/main/install.md
+- Reference: https://raw.githubusercontent.com/github/gh-aw/main/.github/aw/github-agentic-workflows.md
+
+-->
+
 # GitHub Agentic Workflows
 
 Write agentic workflows in natural language markdown, and run them in GitHub Actions.
@@ -50,7 +61,7 @@ The `gh aw` cli converts this into a GitHub Actions Workflow (.yml) that runs an
 
 The AI agent reads your repository context, analyzes issues, generates visualizations, and creates reports - all defined in natural language rather than complex code.
 
-## Safe Agentic Workflows
+## Safety
 
 Security is foundational to GitHub Agentic Workflows. Workflows run with read-only permissions by default, with write operations only allowed through sanitized `safe-outputs`. The system implements multiple layers of protection including sandboxed execution, input sanitization, network isolation, supply chain security (SHA-pinned dependencies), tool allow-listing, and compile-time validation. Access can be gated to team members only, with human approval gates for critical operations, ensuring AI agents operate safely within controlled boundaries. See the [Security Architecture](https://github.github.com/gh-aw/introduction/architecture/) for comprehensive details on threat modeling, implementation guidelines, and best practices.
 
