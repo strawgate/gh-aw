@@ -17,13 +17,13 @@ var orchestratorToolsLog = logger.New("workflow:compiler_orchestrator_tools")
 type toolsProcessingResult struct {
 	tools                map[string]any
 	runtimes             map[string]any
-	plugins              []string
-	pluginsToken         string
+	pluginInfo           *PluginInfo // Consolidated plugin information
 	toolsTimeout         int
 	toolsStartupTimeout  int
 	markdownContent      string
-	importedMarkdown     string // imported markdown from frontmatter imports (separate from main body)
-	mainWorkflowMarkdown string // main workflow markdown without imports (for runtime-import)
+	importedMarkdown     string   // Only imports WITH inputs (for compile-time substitution)
+	importPaths          []string // Import paths for runtime-import macro generation (imports without inputs)
+	mainWorkflowMarkdown string   // main workflow markdown without imports (for runtime-import)
 	allIncludedFiles     []string
 	workflowName         string
 	frontmatterName      string
@@ -139,13 +139,20 @@ func (c *Compiler) processToolsAndMarkdown(result *parser.FrontmatterResult, cle
 	}
 
 	// Extract plugins from frontmatter
-	plugins, pluginsToken := extractPluginsFromFrontmatter(result.Frontmatter)
-	if len(plugins) > 0 {
-		orchestratorToolsLog.Printf("Extracted %d plugins from frontmatter (custom_token=%v)", len(plugins), pluginsToken != "")
+	pluginInfo := extractPluginsFromFrontmatter(result.Frontmatter)
+	if pluginInfo != nil && len(pluginInfo.Plugins) > 0 {
+		orchestratorToolsLog.Printf("Extracted %d plugins from frontmatter (custom_token=%v, mcp_configs=%d)",
+			len(pluginInfo.Plugins), pluginInfo.CustomToken != "", len(pluginInfo.MCPConfigs))
 	}
 
 	// Merge plugins from imports with top-level plugins
 	if len(importsResult.MergedPlugins) > 0 {
+		if pluginInfo == nil {
+			pluginInfo = &PluginInfo{
+				MCPConfigs: make(map[string]*PluginMCPConfig),
+			}
+		}
+
 		orchestratorToolsLog.Printf("Merging %d plugins from imports", len(importsResult.MergedPlugins))
 		// Create a set to track unique plugins
 		pluginsSet := make(map[string]bool)
@@ -156,7 +163,7 @@ func (c *Compiler) processToolsAndMarkdown(result *parser.FrontmatterResult, cle
 		}
 
 		// Add top-level plugins (these override/supplement imports)
-		for _, plugin := range plugins {
+		for _, plugin := range pluginInfo.Plugins {
 			pluginsSet[plugin] = true
 		}
 
@@ -168,9 +175,9 @@ func (c *Compiler) processToolsAndMarkdown(result *parser.FrontmatterResult, cle
 
 		// Sort for deterministic output
 		sort.Strings(mergedPlugins)
-		plugins = mergedPlugins
+		pluginInfo.Plugins = mergedPlugins
 
-		orchestratorToolsLog.Printf("Merged plugins: %d total unique plugins", len(plugins))
+		orchestratorToolsLog.Printf("Merged plugins: %d total unique plugins", len(pluginInfo.Plugins))
 	}
 
 	// Add MCP fetch server if needed (when web-fetch is requested but engine doesn't support it)
@@ -221,14 +228,22 @@ func (c *Compiler) processToolsAndMarkdown(result *parser.FrontmatterResult, cle
 	mainWorkflowMarkdown := markdownContent
 	orchestratorToolsLog.Printf("Main workflow markdown: %d bytes", len(mainWorkflowMarkdown))
 
-	// Prepend imported markdown from frontmatter imports field
+	// Get import paths for runtime-import macro generation
+	var importPaths []string
+	if len(importsResult.ImportPaths) > 0 {
+		importPaths = importsResult.ImportPaths
+		orchestratorToolsLog.Printf("Found %d import paths for runtime-import macros", len(importPaths))
+	}
+
+	// Handle imported markdown from frontmatter imports field
+	// Only imports WITH inputs will have markdown content (for compile-time substitution)
 	var importedMarkdown string
 	if importsResult.MergedMarkdown != "" {
 		importedMarkdown = importsResult.MergedMarkdown
 		markdownContent = importsResult.MergedMarkdown + markdownContent
-		orchestratorToolsLog.Printf("Stored imported markdown: %d bytes, combined markdown: %d bytes", len(importedMarkdown), len(markdownContent))
+		orchestratorToolsLog.Printf("Stored imported markdown with inputs: %d bytes, combined markdown: %d bytes", len(importedMarkdown), len(markdownContent))
 	} else {
-		orchestratorToolsLog.Print("No imported markdown")
+		orchestratorToolsLog.Print("No imported markdown with inputs")
 	}
 
 	log.Print("Expanded includes in markdown content")
@@ -283,12 +298,12 @@ func (c *Compiler) processToolsAndMarkdown(result *parser.FrontmatterResult, cle
 	return &toolsProcessingResult{
 		tools:                tools,
 		runtimes:             runtimes,
-		plugins:              plugins,
-		pluginsToken:         pluginsToken,
+		pluginInfo:           pluginInfo,
 		toolsTimeout:         toolsTimeout,
 		toolsStartupTimeout:  toolsStartupTimeout,
 		markdownContent:      markdownContent,
-		importedMarkdown:     importedMarkdown,
+		importedMarkdown:     importedMarkdown, // Only imports WITH inputs
+		importPaths:          importPaths,      // Import paths for runtime-import macros (imports without inputs)
 		mainWorkflowMarkdown: mainWorkflowMarkdown,
 		allIncludedFiles:     allIncludedFiles,
 		workflowName:         workflowName,

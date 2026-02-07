@@ -143,7 +143,7 @@ jobs:
         with:
           go-version: '1.25'
       - name: Capture GOROOT for AWF chroot mode
-        run: echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
       - name: Setup Node.js
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
@@ -1168,32 +1168,16 @@ jobs:
           </system>
           PROMPT_EOF
           cat << 'PROMPT_EOF' >> "$GH_AW_PROMPT"
-          ## Team Mood
-          
-          We are in release mode, focusing on quality and stability. Skip any work that does not directly improve quality or stability. Non-critical fixes or updates are not needed and should be skipped or canceled. If your task does not clearly contribute to product stability or is not mission critical, you should do nothing (call noop).
-          
-          
-          
-          **IMPORTANT**: Always use the `safeinputs-gh` tool for GitHub CLI commands instead of running `gh` directly via bash. The `safeinputs-gh` tool has proper authentication configured with `GITHUB_TOKEN`, while bash commands do not have GitHub CLI authentication by default.
-          
-          **Correct**:
-          ```
-          Use the safeinputs-gh tool with args: "pr list --limit 5"
-          Use the safeinputs-gh tool with args: "issue view 123"
-          ```
-          
-          **Incorrect**:
-          ```
-          Use the gh safe-input tool with args: "pr list --limit 5"  ❌ (Wrong tool name - use safeinputs-gh)
-          Run: gh pr list --limit 5  ❌ (No authentication in bash)
-          Execute bash: gh issue view 123  ❌ (No authentication in bash)
-          ```
-          
-          
-          
-          
-          
-          
+          {{#runtime-import .github/workflows/shared/mood.md}}
+          PROMPT_EOF
+          cat << 'PROMPT_EOF' >> "$GH_AW_PROMPT"
+          {{#runtime-import .github/workflows/shared/opencode.md}}
+          PROMPT_EOF
+          cat << 'PROMPT_EOF' >> "$GH_AW_PROMPT"
+          {{#runtime-import .github/workflows/shared/gh.md}}
+          PROMPT_EOF
+          cat << 'PROMPT_EOF' >> "$GH_AW_PROMPT"
+          {{#runtime-import .github/workflows/shared/github-queries-safe-input.md}}
           PROMPT_EOF
           cat << 'PROMPT_EOF' >> "$GH_AW_PROMPT"
           {{#runtime-import .github/workflows/smoke-opencode.md}}

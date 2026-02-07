@@ -370,7 +370,8 @@ type WorkflowData struct {
 	Source               string         // optional source field (owner/repo@ref/path) rendered as comment in lock file
 	TrackerID            string         // optional tracker identifier for created assets (min 8 chars, alphanumeric + hyphens/underscores)
 	ImportedFiles        []string       // list of files imported via imports field (rendered as comment in lock file)
-	ImportedMarkdown     string         // imported markdown content from frontmatter imports (for separate inlining)
+	ImportedMarkdown     string         // Only imports WITH inputs (for compile-time substitution)
+	ImportPaths          []string       // Import file paths for runtime-import macro generation (imports without inputs)
 	MainWorkflowMarkdown string         // main workflow markdown without imports (for runtime-import)
 	IncludedFiles        []string       // list of files included via @include directives (rendered as comment in lock file)
 	ImportInputs         map[string]any // input values from imports with inputs (for github.aw.inputs.* substitution)
@@ -417,8 +418,7 @@ type WorkflowData struct {
 	CacheMemoryConfig    *CacheMemoryConfig   // parsed cache-memory configuration
 	RepoMemoryConfig     *RepoMemoryConfig    // parsed repo-memory configuration
 	Runtimes             map[string]any       // runtime version overrides from frontmatter
-	Plugins              []string             // plugin repository slugs to install (e.g., ["org/repo", "org2/repo2"])
-	PluginsToken         string               // custom github-token for plugin installation (from plugins.github-token field)
+	PluginInfo           *PluginInfo          // Consolidated plugin information (plugins, custom token, MCP configs)
 	ToolsTimeout         int                  // timeout in seconds for tool/MCP operations (0 = use engine default)
 	GitHubToken          string               // top-level github-token expression from frontmatter
 	ToolsStartupTimeout  int                  // timeout in seconds for MCP server startup (0 = use engine default)
