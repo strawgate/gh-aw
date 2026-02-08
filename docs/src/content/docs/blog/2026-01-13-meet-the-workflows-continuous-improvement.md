@@ -142,6 +142,8 @@ gh aw add-wizard https://github.com/github/gh-aw/blob/v0.42.13/.github/workflows
 
 Then edit and remix the workflow specifications to meet your needs, recompile using `gh aw compile`, and push to your repository. See our [Quick Start](https://github.github.com/gh-aw/setup/quick-start/) for further installation and setup instructions.
 
+You can also [create your own workflows](/gh-aw/setups/creating-workflows).
+
 ## Next Up: Continuous Documentation
 
 Beyond code quality, we need to keep documentation accurate and up-to-date as code evolves. How do we maintain docs that stay current?

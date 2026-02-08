@@ -76,6 +76,8 @@ gh aw add-wizard https://github.com/github/gh-aw/blob/v0.42.13/.github/workflows
 
 Then edit and remix the workflow specifications to meet your needs, recompile using `gh aw compile`, and push to your repository. See our [Quick Start](https://github.github.com/gh-aw/setup/quick-start/) for further installation and setup instructions.
 
+You can also [create your own workflows](/gh-aw/setups/creating-workflows).
+
 ## Next Up: Continuous Refactoring
 
 Simplification is just the beginning. Beyond removing complexity, we can use agents to continuously improve code in many more ways. Our next posts explore this topic.
