@@ -69,8 +69,8 @@ const SAMPLE_VALIDATION_CONFIG = {
   submit_pull_request_review: {
     defaultMax: 1,
     fields: {
-      body: { required: true, type: "string", sanitize: true, maxLength: 65000 },
-      event: { required: true, type: "string", enum: ["APPROVE", "REQUEST_CHANGES", "COMMENT"] },
+      body: { type: "string", sanitize: true, maxLength: 65000 },
+      event: { type: "string", enum: ["APPROVE", "REQUEST_CHANGES", "COMMENT"] },
     },
   },
   link_sub_issue: {

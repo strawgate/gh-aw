@@ -7,7 +7,6 @@
 
 const { getErrorMessage } = require("./error_helpers.cjs");
 const { resolveTargetRepoConfig, resolveAndValidateRepo } = require("./repo_helpers.cjs");
-const { addComment, setReviewContext, setFooterContext } = require("./pr_review_buffer.cjs");
 
 /** @type {string} Safe output type handled by this module */
 const HANDLER_TYPE = "create_pull_request_review_comment";
@@ -15,8 +14,9 @@ const HANDLER_TYPE = "create_pull_request_review_comment";
 /**
  * Main handler factory for create_pull_request_review_comment
  * Returns a message handler function that validates and buffers individual review comments.
- * Comments are buffered in pr_review_buffer.cjs and submitted as a single PR review
- * after all messages have been processed (via the handler manager's finalization step).
+ * Comments are buffered in the PR review buffer (passed via config._prReviewBuffer) and
+ * submitted as a single PR review after all messages have been processed.
+ *
  * @type {HandlerFactoryFunction}
  */
 async function main(config = {}) {
@@ -24,7 +24,15 @@ async function main(config = {}) {
   const defaultSide = config.side || "RIGHT";
   const commentTarget = config.target || "triggering";
   const maxCount = config.max || 10;
+  const buffer = config._prReviewBuffer;
   const { defaultTargetRepo, allowedRepos } = resolveTargetRepoConfig(config);
+
+  if (!buffer) {
+    core.warning("create_pull_request_review_comment: No PR review buffer provided in config");
+    return async function handleCreatePRReviewComment() {
+      return { success: false, error: "No PR review buffer available" };
+    };
+  }
 
   core.info(`PR review comment target configuration: ${commentTarget}`);
   core.info(`Default comment side configuration: ${defaultSide}`);
@@ -50,7 +58,7 @@ async function main(config = {}) {
   const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
   const runUrl = context.payload.repository ? `${context.payload.repository.html_url}/actions/runs/${runId}` : `${githubServer}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
 
-  setFooterContext({
+  buffer.setFooterContext({
     workflowName,
     runUrl,
     workflowSource,
@@ -251,8 +259,18 @@ async function main(config = {}) {
       };
     }
 
-    // Set the review context (first comment sets it, subsequent are ignored)
-    setReviewContext({
+    // Set the review context (first comment sets it)
+    // Reject comments targeting a different repo/PR than the first comment
+    const existingCtx = buffer.getReviewContext();
+    if (existingCtx && (existingCtx.repo !== itemRepo || existingCtx.pullRequestNumber !== pullRequestNumber)) {
+      core.warning(`Skipping review comment: targets ${itemRepo}#${pullRequestNumber} but buffer is bound to ${existingCtx.repo}#${existingCtx.pullRequestNumber}. ` + "All review comments in a single review must target the same PR.");
+      return {
+        success: false,
+        error: `Review comments must target the same PR (buffer is bound to ${existingCtx.repo}#${existingCtx.pullRequestNumber})`,
+      };
+    }
+
+    buffer.setReviewContext({
       repo: itemRepo,
       repoParts: repoParts,
       pullRequestNumber: pullRequestNumber,
@@ -272,7 +290,7 @@ async function main(config = {}) {
       bufferedComment.start_line = startLine;
     }
 
-    addComment(bufferedComment);
+    buffer.addComment(bufferedComment);
 
     core.info(`Buffered review comment on PR #${pullRequestNumber} in ${itemRepo} at ${commentItem.path}:${line}${startLine ? ` (lines ${startLine}-${line})` : ""} [${side}]`);
 

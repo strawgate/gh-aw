@@ -156,8 +156,8 @@ var ValidationConfig = map[string]TypeValidationConfig{
 	"submit_pull_request_review": {
 		DefaultMax: 1,
 		Fields: map[string]FieldValidation{
-			"body":  {Required: true, Type: "string", Sanitize: true, MaxLength: MaxBodyLength},
-			"event": {Required: true, Type: "string", Enum: []string{"APPROVE", "REQUEST_CHANGES", "COMMENT"}},
+			"body":  {Type: "string", Sanitize: true, MaxLength: MaxBodyLength},
+			"event": {Type: "string", Enum: []string{"APPROVE", "REQUEST_CHANGES", "COMMENT"}},
 		},
 	},
 	"create_discussion": {

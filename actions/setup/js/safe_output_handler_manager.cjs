@@ -16,7 +16,7 @@ const { generateMissingInfoSections } = require("./missing_info_formatter.cjs");
 const { setCollectedMissings } = require("./missing_messages_helper.cjs");
 const { writeSafeOutputSummaries } = require("./safe_output_summary.cjs");
 const { getIssuesToAssignCopilot } = require("./create_issue.cjs");
-const prReviewBuffer = require("./pr_review_buffer.cjs");
+const { createReviewBuffer } = require("./pr_review_buffer.cjs");
 
 /**
  * Handler map configuration
@@ -88,13 +88,17 @@ function loadConfig() {
   }
 }
 
+/** @type {Set<string>} Handler types that participate in the PR review buffer */
+const PR_REVIEW_HANDLER_TYPES = new Set(["create_pull_request_review_comment", "submit_pull_request_review"]);
+
 /**
  * Load and initialize handlers for enabled safe output types
  * Calls each handler's factory function (main) to get message processors
  * @param {Object} config - Safe outputs configuration
+ * @param {Object} prReviewBuffer - Shared PR review buffer instance
  * @returns {Promise<Map<string, Function>>} Map of type to message handler function
  */
-async function loadHandlers(config) {
+async function loadHandlers(config, prReviewBuffer) {
   const messageHandlers = new Map();
 
   core.info("Loading and initializing safe output handlers based on configuration...");
@@ -107,7 +111,13 @@ async function loadHandlers(config) {
         const handlerModule = require(handlerPath);
         if (handlerModule && typeof handlerModule.main === "function") {
           // Call the factory function with config to get the message handler
-          const handlerConfig = config[type] || {};
+          const handlerConfig = { ...(config[type] || {}) };
+
+          // Inject shared PR review buffer into handlers that need it
+          if (PR_REVIEW_HANDLER_TYPES.has(type)) {
+            handlerConfig._prReviewBuffer = prReviewBuffer;
+          }
+
           const messageHandler = await handlerModule.main(handlerConfig);
 
           if (typeof messageHandler !== "function") {
@@ -724,8 +734,11 @@ async function main() {
 
     core.info(`Found ${agentOutput.items.length} message(s) in agent output`);
 
+    // Create the shared PR review buffer instance (no global state)
+    const prReviewBuffer = createReviewBuffer();
+
     // Load and initialize handlers based on configuration (factory pattern)
-    const messageHandlers = await loadHandlers(config);
+    const messageHandlers = await loadHandlers(config, prReviewBuffer);
 
     if (messageHandlers.size === 0) {
       core.info("No handlers loaded - nothing to process");
@@ -738,10 +751,15 @@ async function main() {
     // Process all messages in order of appearance
     const processingResult = await processMessages(messageHandlers, agentOutput.items);
 
-    // Finalize buffered PR review - submit all buffered comments as a single review
-    if (prReviewBuffer.hasBufferedComments()) {
+    // Finalize buffered PR review — submit when comments or metadata exist
+    if (prReviewBuffer.hasBufferedComments() || prReviewBuffer.hasReviewMetadata()) {
       core.info(`\n=== Finalizing PR Review ===`);
-      core.info(`Submitting ${prReviewBuffer.getBufferedCount()} buffered review comment(s) as a single PR review`);
+      const bufferedCount = prReviewBuffer.getBufferedCount();
+      if (bufferedCount > 0) {
+        core.info(`Submitting ${bufferedCount} buffered review comment(s) as a single PR review`);
+      } else {
+        core.info("Submitting PR review (body-only, no inline comments)");
+      }
       try {
         const reviewResult = await prReviewBuffer.submitReview();
         if (reviewResult.success && !reviewResult.skipped) {

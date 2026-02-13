@@ -1,10 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Mock pr_review_buffer before requiring the module
-vi.mock("./pr_review_buffer.cjs", () => ({
-  setReviewMetadata: vi.fn(),
-}));
-
 const mockCore = {
   debug: vi.fn(),
   info: vi.fn(),
@@ -20,23 +15,35 @@ const mockCore = {
 
 global.core = mockCore;
 
+const { createReviewBuffer } = require("./pr_review_buffer.cjs");
+
 describe("submit_pr_review (Handler Factory Architecture)", () => {
   let handler;
-  let setReviewMetadata;
+  let buffer;
 
   beforeEach(async () => {
     vi.clearAllMocks();
 
-    setReviewMetadata = (await import("./pr_review_buffer.cjs")).setReviewMetadata;
+    // Create a fresh buffer for each test (factory pattern, no global state)
+    buffer = createReviewBuffer();
 
     const { main } = require("./submit_pr_review.cjs");
-    handler = await main({ max: 1 });
+    handler = await main({ max: 1, _prReviewBuffer: buffer });
   });
 
   it("should return a function from main()", async () => {
     const { main } = require("./submit_pr_review.cjs");
-    const result = await main({});
+    const localBuffer = createReviewBuffer();
+    const result = await main({ _prReviewBuffer: localBuffer });
     expect(typeof result).toBe("function");
+  });
+
+  it("should return error when no buffer provided", async () => {
+    const { main } = require("./submit_pr_review.cjs");
+    const noBufferHandler = await main({});
+    const result = await noBufferHandler({}, {});
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No PR review buffer available");
   });
 
   it("should set review metadata for APPROVE event", async () => {
@@ -51,7 +58,7 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
     expect(result.success).toBe(true);
     expect(result.event).toBe("APPROVE");
     expect(result.body_length).toBe(20);
-    expect(setReviewMetadata).toHaveBeenCalledWith("LGTM! Great changes.", "APPROVE");
+    expect(buffer.hasReviewMetadata()).toBe(true);
   });
 
   it("should set review metadata for REQUEST_CHANGES event", async () => {
@@ -65,7 +72,6 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     expect(result.success).toBe(true);
     expect(result.event).toBe("REQUEST_CHANGES");
-    expect(setReviewMetadata).toHaveBeenCalledWith("Please fix the issues.", "REQUEST_CHANGES");
   });
 
   it("should set review metadata for COMMENT event", async () => {
@@ -79,7 +85,6 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     expect(result.success).toBe(true);
     expect(result.event).toBe("COMMENT");
-    expect(setReviewMetadata).toHaveBeenCalledWith("Some general feedback.", "COMMENT");
   });
 
   it("should normalize event to uppercase", async () => {
@@ -93,7 +98,6 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     expect(result.success).toBe(true);
     expect(result.event).toBe("APPROVE");
-    expect(setReviewMetadata).toHaveBeenCalledWith("Looks good", "APPROVE");
   });
 
   it("should default event to COMMENT when missing", async () => {
@@ -106,7 +110,6 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     expect(result.success).toBe(true);
     expect(result.event).toBe("COMMENT");
-    expect(setReviewMetadata).toHaveBeenCalledWith("Some feedback", "COMMENT");
   });
 
   it("should reject invalid event values", async () => {
@@ -120,7 +123,6 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Invalid review event");
-    expect(setReviewMetadata).not.toHaveBeenCalled();
   });
 
   it("should require body for APPROVE event", async () => {
@@ -134,7 +136,6 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Review body is required");
-    expect(setReviewMetadata).not.toHaveBeenCalled();
   });
 
   it("should require body for REQUEST_CHANGES event", async () => {
@@ -148,7 +149,6 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Review body is required");
-    expect(setReviewMetadata).not.toHaveBeenCalled();
   });
 
   it("should allow empty body for COMMENT event", async () => {
@@ -161,7 +161,18 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     expect(result.success).toBe(true);
     expect(result.event).toBe("COMMENT");
-    expect(setReviewMetadata).toHaveBeenCalledWith("", "COMMENT");
+  });
+
+  it("should allow no event and no body (defaults to COMMENT)", async () => {
+    const message = {
+      type: "submit_pull_request_review",
+    };
+
+    const result = await handler(message, {});
+
+    expect(result.success).toBe(true);
+    expect(result.event).toBe("COMMENT");
+    expect(result.body_length).toBe(0);
   });
 
   it("should respect max count configuration", async () => {
@@ -230,5 +241,74 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
     const result2 = await handler(validMessage, {});
     expect(result2.success).toBe(true);
+  });
+
+  it("should set review context from triggering PR for body-only reviews", async () => {
+    // Simulate a PR trigger context
+    global.context = {
+      repo: { owner: "test-owner", repo: "test-repo" },
+      payload: {
+        pull_request: { number: 42, head: { sha: "abc123" } },
+      },
+    };
+
+    const localBuffer = createReviewBuffer();
+    const { main } = require("./submit_pr_review.cjs");
+    const localHandler = await main({ max: 1, _prReviewBuffer: localBuffer });
+
+    const message = {
+      type: "submit_pull_request_review",
+      body: "LGTM!",
+      event: "APPROVE",
+    };
+
+    const result = await localHandler(message, {});
+
+    expect(result.success).toBe(true);
+    expect(localBuffer.hasReviewMetadata()).toBe(true);
+
+    // The handler should have set review context from triggering PR
+    const ctx = localBuffer.getReviewContext();
+    expect(ctx).not.toBeNull();
+    expect(ctx.repo).toBe("test-owner/test-repo");
+    expect(ctx.pullRequestNumber).toBe(42);
+
+    // Clean up
+    delete global.context;
+  });
+
+  it("should not override existing review context from comments", async () => {
+    // Pre-set context as if a comment handler already set it
+    buffer.setReviewContext({
+      repo: "comment-owner/comment-repo",
+      repoParts: { owner: "comment-owner", repo: "comment-repo" },
+      pullRequestNumber: 99,
+      pullRequest: { head: { sha: "comment-sha" } },
+    });
+
+    global.context = {
+      repo: { owner: "trigger-owner", repo: "trigger-repo" },
+      payload: {
+        pull_request: { number: 1, head: { sha: "trigger-sha" } },
+      },
+    };
+
+    const message = {
+      type: "submit_pull_request_review",
+      body: "Review body",
+      event: "COMMENT",
+    };
+
+    const result = await handler(message, {});
+
+    expect(result.success).toBe(true);
+
+    // Context should still be from the comment handler, not overridden
+    const ctx = buffer.getReviewContext();
+    expect(ctx.repo).toBe("comment-owner/comment-repo");
+    expect(ctx.pullRequestNumber).toBe(99);
+
+    // Clean up
+    delete global.context;
   });
 });

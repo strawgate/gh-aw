@@ -293,14 +293,10 @@
     "description": "Submit a pull request review with a status decision. All create_pull_request_review_comment outputs are automatically collected and included as inline comments in this review. Use APPROVE to approve the PR, REQUEST_CHANGES to request changes, or COMMENT for general feedback without a decision. If you don't call this tool, review comments are still submitted as a COMMENT review.",
     "inputSchema": {
       "type": "object",
-      "required": [
-        "body",
-        "event"
-      ],
       "properties": {
         "body": {
           "type": "string",
-          "description": "Overall review summary in Markdown. Provide a high-level assessment of the changes. Required for APPROVE and REQUEST_CHANGES events."
+          "description": "Overall review summary in Markdown. Provide a high-level assessment of the changes. Required for APPROVE and REQUEST_CHANGES events; optional for COMMENT."
         },
         "event": {
           "type": "string",
@@ -309,7 +305,7 @@
             "REQUEST_CHANGES",
             "COMMENT"
           ],
-          "description": "Review decision: APPROVE to approve the pull request, REQUEST_CHANGES to formally request changes before merging, or COMMENT for general feedback without a formal decision."
+          "description": "Review decision: APPROVE to approve the pull request, REQUEST_CHANGES to formally request changes before merging, or COMMENT for general feedback without a formal decision. Defaults to COMMENT when omitted."
         }
       },
       "additionalProperties": false
