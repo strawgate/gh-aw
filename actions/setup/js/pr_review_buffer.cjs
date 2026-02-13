@@ -61,6 +61,9 @@ function createReviewBuffer() {
   /** @type {{workflowName: string, runUrl: string, workflowSource: string, workflowSourceURL: string, triggeringIssueNumber: number|undefined, triggeringPRNumber: number|undefined, triggeringDiscussionNumber: number|undefined} | null} */
   let footerContext = null;
 
+  /** @type {boolean} Whether to include footer in review body (default: true, controlled by config.footer) */
+  let includeFooter = true;
+
   /**
    * Add a validated comment to the buffer.
    * Rejects comments targeting a different repo/PR than the first comment.
@@ -117,6 +120,15 @@ function createReviewBuffer() {
   }
 
   /**
+   * Set whether to include footer in review body.
+   * Controlled by the `footer` config option (default: true).
+   * @param {boolean} value - Whether to include footer
+   */
+  function setIncludeFooter(value) {
+    includeFooter = value;
+  }
+
+  /**
    * Check if there are buffered comments to submit.
    * @returns {boolean}
    */
@@ -169,8 +181,9 @@ function createReviewBuffer() {
     const event = reviewMetadata ? reviewMetadata.event : "COMMENT";
     let body = reviewMetadata ? reviewMetadata.body : "";
 
-    // Add footer to review body if we have footer context
-    if (footerContext) {
+    // Add footer to review body if enabled, we have footer context, and a non-empty body.
+    // Skip the footer for body-less reviews (e.g. APPROVE with no body) to keep them clean.
+    if (includeFooter && footerContext && body) {
       body += generateFooter(
         footerContext.workflowName,
         footerContext.runUrl,
@@ -226,7 +239,7 @@ function createReviewBuffer() {
         requestParams.comments = comments;
       }
 
-      // Only include body if non-empty (body is required for APPROVE and REQUEST_CHANGES)
+      // Only include body if non-empty
       if (body) {
         requestParams.body = body;
       }
@@ -261,6 +274,7 @@ function createReviewBuffer() {
     reviewMetadata = null;
     reviewContext = null;
     footerContext = null;
+    includeFooter = true;
   }
 
   return {
@@ -269,6 +283,7 @@ function createReviewBuffer() {
     setReviewContext,
     getReviewContext,
     setFooterContext,
+    setIncludeFooter,
     hasBufferedComments,
     hasReviewMetadata,
     getBufferedCount,

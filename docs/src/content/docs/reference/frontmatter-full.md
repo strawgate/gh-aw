@@ -1784,10 +1784,7 @@ cache: []
 
 # Safe output processing configuration that automatically creates GitHub issues,
 # comments, and pull requests from AI workflow output without requiring write
-# permissions in the main job. When using GitHub App tokens (app:), permissions
-# are automatically narrowed per-job to match only what's needed, and tokens are
-# auto-revoked at job end. Multiple safe outputs in the same workflow receive the
-# union of their required permissions.
+# permissions in the main job
 # (optional)
 safe-outputs:
   # List of allowed domains for URI filtering in AI workflow output. URLs from other
@@ -2701,6 +2698,11 @@ safe-outputs:
     # (optional)
     max: 1
 
+    # Controls whether AI-generated footer is added to the review body. When false,
+    # the footer is omitted. Defaults to true.
+    # (optional)
+    footer: true
+
     # GitHub token to use for this specific output type. Overrides global github-token
     # if specified.
     # (optional)
@@ -3438,10 +3440,8 @@ safe-outputs:
   github-token: "${{ secrets.GITHUB_TOKEN }}"
 
   # GitHub App credentials for minting installation access tokens. When configured,
-  # tokens are automatically minted per-job with permissions narrowed to match the
-  # job's permissions block. Tokens are auto-revoked at job end. This enables safe
-  # use of a broadly-permissioned GitHub App because each job only receives the
-  # specific permissions it needs.
+  # a token will be generated using the app credentials and used for all safe output
+  # operations.
   # (optional)
   app:
     # GitHub App ID. Should reference a variable (e.g., ${{ vars.APP_ID }}).
