@@ -853,12 +853,12 @@ Creates discussions with optional `category` (slug, name, or ID; defaults to fir
 ```yaml wrap
 safe-outputs:
   create-discussion:
-    title-prefix: "[ai] "     # prefix for titles
-    category: "general"       # category slug, name, or ID (use lowercase)
-    expires: 3                # auto-close after 3 days (or false to disable)
-    max: 3                    # max discussions (default: 1)
-    target-repo: "owner/repo" # cross-repository
-    fallback-to-issue: true   # fallback to issue creation on permission errors (default: true)
+    title-prefix: "[ai] "        # prefix for titles
+    category: "announcements"    # category slug, name, or ID (use lowercase, prefer announcement-capable)
+    expires: 3                   # auto-close after 3 days (or false to disable)
+    max: 3                       # max discussions (default: 1)
+    target-repo: "owner/repo"    # cross-repository
+    fallback-to-issue: true      # fallback to issue creation on permission errors (default: true)
 ```
 
 #### Fallback to Issue Creation
