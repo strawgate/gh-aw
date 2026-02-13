@@ -5,17 +5,18 @@
  * @typedef {import('./types/handler-factory').HandlerFactoryFunction} HandlerFactoryFunction
  */
 
-const { generateFooter } = require("./generate_footer.cjs");
-const { getRepositoryUrl } = require("./get_repository_url.cjs");
 const { getErrorMessage } = require("./error_helpers.cjs");
 const { resolveTargetRepoConfig, resolveAndValidateRepo } = require("./repo_helpers.cjs");
+const { addComment, setReviewContext, setFooterContext } = require("./pr_review_buffer.cjs");
 
 /** @type {string} Safe output type handled by this module */
 const HANDLER_TYPE = "create_pull_request_review_comment";
 
 /**
  * Main handler factory for create_pull_request_review_comment
- * Returns a message handler function that processes individual review comment messages
+ * Returns a message handler function that validates and buffers individual review comments.
+ * Comments are buffered in pr_review_buffer.cjs and submitted as a single PR review
+ * after all messages have been processed (via the handler manager's finalization step).
  * @type {HandlerFactoryFunction}
  */
 async function main(config = {}) {
@@ -36,16 +37,31 @@ async function main(config = {}) {
   // Track how many items we've processed for max limit
   let processedCount = 0;
 
-  // Track created comments for outputs
-  const createdComments = [];
-
   // Extract triggering context for footer generation
   const triggeringIssueNumber = context.payload?.issue?.number && !context.payload?.issue?.pull_request ? context.payload.issue.number : undefined;
   const triggeringPRNumber = context.payload?.pull_request?.number || (context.payload?.issue?.pull_request ? context.payload.issue.number : undefined);
   const triggeringDiscussionNumber = context.payload?.discussion?.number;
 
+  // Set footer context once for the review buffer
+  const workflowName = process.env.GH_AW_WORKFLOW_NAME || "Workflow";
+  const workflowSource = process.env.GH_AW_WORKFLOW_SOURCE || "";
+  const workflowSourceURL = process.env.GH_AW_WORKFLOW_SOURCE_URL || "";
+  const runId = context.runId;
+  const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
+  const runUrl = context.payload.repository ? `${context.payload.repository.html_url}/actions/runs/${runId}` : `${githubServer}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+
+  setFooterContext({
+    workflowName,
+    runUrl,
+    workflowSource,
+    workflowSourceURL,
+    triggeringIssueNumber,
+    triggeringPRNumber,
+    triggeringDiscussionNumber,
+  });
+
   /**
-   * Message handler function that processes a single create_pull_request_review_comment message
+   * Message handler function that validates and buffers a single create_pull_request_review_comment message
    * @param {Object} message - The create_pull_request_review_comment message to process
    * @param {Object} resolvedTemporaryIds - Map of temporary IDs to {repo, number}
    * @returns {Promise<Object>} Result with success/error status and comment details
@@ -203,8 +219,6 @@ async function main(config = {}) {
       };
     }
 
-    core.info(`Creating review comment on PR #${pullRequestNumber}`);
-
     // Parse line numbers
     const line = parseInt(commentItem.line, 10);
     if (isNaN(line) || line <= 0) {
@@ -237,61 +251,37 @@ async function main(config = {}) {
       };
     }
 
-    // Extract body from the JSON item
-    let body = commentItem.body.trim();
+    // Set the review context (first comment sets it, subsequent are ignored)
+    setReviewContext({
+      repo: itemRepo,
+      repoParts: repoParts,
+      pullRequestNumber: pullRequestNumber,
+      pullRequest: pullRequest,
+    });
 
-    // Add AI disclaimer with workflow name and run url
-    const workflowName = process.env.GH_AW_WORKFLOW_NAME || "Workflow";
-    const workflowSource = process.env.GH_AW_WORKFLOW_SOURCE || "";
-    const workflowSourceURL = process.env.GH_AW_WORKFLOW_SOURCE_URL || "";
-    const runId = context.runId;
-    const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
-    const runUrl = context.payload.repository ? `${context.payload.repository.html_url}/actions/runs/${runId}` : `${githubServer}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
-    body += generateFooter(workflowName, runUrl, workflowSource, workflowSourceURL, triggeringIssueNumber, triggeringPRNumber, triggeringDiscussionNumber);
+    // Buffer the comment instead of posting it individually
+    /** @type {import('./pr_review_buffer.cjs').BufferedComment} */
+    const bufferedComment = {
+      path: commentItem.path,
+      line: line,
+      body: commentItem.body.trim(),
+      side: side,
+    };
 
-    core.info(`Creating review comment on PR #${pullRequestNumber} in ${itemRepo} at ${commentItem.path}:${line}${startLine ? ` (lines ${startLine}-${line})` : ""} [${side}]`);
-    core.info(`Comment content length: ${body.length}`);
-
-    try {
-      // Prepare the request parameters
-      /** @type {any} */
-      const requestParams = {
-        owner: repoParts.owner,
-        repo: repoParts.repo,
-        pull_number: pullRequestNumber,
-        body: body,
-        path: commentItem.path,
-        commit_id: pullRequest && pullRequest.head ? pullRequest.head.sha : "", // Required for creating review comments
-        line: line,
-        side: side,
-      };
-
-      // Add start_line for multi-line comments
-      if (startLine !== undefined) {
-        requestParams.start_line = startLine;
-        requestParams.start_side = side; // start_side should match side for consistency
-      }
-
-      // Create the review comment using GitHub API
-      const { data: comment } = await github.rest.pulls.createReviewComment(requestParams);
-
-      core.info("Created review comment #" + comment.id + ": " + comment.html_url);
-      createdComments.push(comment);
-
-      return {
-        success: true,
-        comment_id: comment.id,
-        comment_url: comment.html_url,
-        pull_request_number: pullRequestNumber,
-        repo: itemRepo,
-      };
-    } catch (error) {
-      core.error(`✗ Failed to create review comment: ${getErrorMessage(error)}`);
-      return {
-        success: false,
-        error: getErrorMessage(error),
-      };
+    if (startLine !== undefined) {
+      bufferedComment.start_line = startLine;
     }
+
+    addComment(bufferedComment);
+
+    core.info(`Buffered review comment on PR #${pullRequestNumber} in ${itemRepo} at ${commentItem.path}:${line}${startLine ? ` (lines ${startLine}-${line})` : ""} [${side}]`);
+
+    return {
+      success: true,
+      buffered: true,
+      pull_request_number: pullRequestNumber,
+      repo: itemRepo,
+    };
   };
 }
 

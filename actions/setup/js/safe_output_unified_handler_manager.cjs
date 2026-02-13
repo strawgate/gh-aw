@@ -23,6 +23,7 @@ const { writeSafeOutputSummaries } = require("./safe_output_summary.cjs");
 const { getIssuesToAssignCopilot } = require("./create_issue.cjs");
 const { sortSafeOutputMessages } = require("./safe_output_topological_sort.cjs");
 const { loadCustomSafeOutputJobTypes } = require("./safe_output_helpers.cjs");
+const prReviewBuffer = require("./pr_review_buffer.cjs");
 
 /**
  * Handler map configuration for regular handlers
@@ -42,6 +43,7 @@ const HANDLER_MAP = {
   link_sub_issue: "./link_sub_issue.cjs",
   update_release: "./update_release.cjs",
   create_pull_request_review_comment: "./create_pr_review_comment.cjs",
+  submit_pull_request_review: "./submit_pr_review.cjs",
   create_pull_request: "./create_pull_request.cjs",
   push_to_pull_request_branch: "./push_to_pull_request_branch.cjs",
   update_pull_request: "./update_pull_request.cjs",
@@ -937,6 +939,22 @@ async function main() {
     // Process all messages in order of appearance
     // Pass the projectOctokit so project handlers can use it
     const processingResult = await processMessages(messageHandlers, agentOutput.items, projectOctokit);
+
+    // Finalize buffered PR review - submit all buffered comments as a single review
+    if (prReviewBuffer.hasBufferedComments()) {
+      core.info(`\n=== Finalizing PR Review ===`);
+      core.info(`Submitting ${prReviewBuffer.getBufferedCount()} buffered review comment(s) as a single PR review`);
+      try {
+        const reviewResult = await prReviewBuffer.submitReview();
+        if (reviewResult.success && !reviewResult.skipped) {
+          core.info(`✓ PR review submitted successfully: ${reviewResult.review_url}`);
+        } else if (!reviewResult.success) {
+          core.warning(`✗ Failed to submit PR review: ${reviewResult.error}`);
+        }
+      } catch (reviewError) {
+        core.warning(`✗ Exception while submitting PR review: ${reviewError.message || reviewError}`);
+      }
+    }
 
     // Store collected missings in helper module for handlers to access
     if (processingResult.missings) {
