@@ -628,7 +628,7 @@ Exposes outputs: `status-update-id`, `project-id`, `status`.
 
 ### Pull Request Creation (`create-pull-request:`)
 
-Creates PRs with code changes. Falls back to issue if creation fails (e.g., org settings block it). `expires` field (same-repo only) auto-closes after period: integers (days) or `2h`, `7d`, `2w`, `1m`, `1y` (hours < 24 treated as 1 day).
+Creates PRs with code changes. By default, falls back to creating an issue if PR creation fails (e.g., org settings block it). Set `fallback-as-issue: false` to disable this fallback and avoid requiring `issues: write` permission. `expires` field (same-repo only) auto-closes after period: integers (days) or `2h`, `7d`, `2w`, `1m`, `1y` (hours < 24 treated as 1 day).
 
 ```yaml wrap
 safe-outputs:
@@ -641,6 +641,7 @@ safe-outputs:
     if-no-changes: "warn"         # "warn" (default), "error", or "ignore"
     target-repo: "owner/repo"     # cross-repository
     base-branch: "vnext"          # target branch for PR (default: github.ref_name)
+    fallback-as-issue: false      # disable issue fallback (default: true)
 ```
 
 The `base-branch` field specifies which branch the pull request should target. This is particularly useful for cross-repository PRs where you need to target non-default branches (e.g., `vnext`, `release/v1.0`, `staging`). When not specified, defaults to the workflow's branch (`github.ref_name`).
@@ -656,7 +657,7 @@ safe-outputs:
 ```
 
 > [!NOTE]
-> PR creation may fail if "Allow GitHub Actions to create and approve pull requests" is disabled in Organization Settings. Fallback creates issue with branch link.
+> PR creation may fail if "Allow GitHub Actions to create and approve pull requests" is disabled in Organization Settings. By default (`fallback-as-issue: true`), fallback creates an issue with branch link and requires `issues: write` permission. Set `fallback-as-issue: false` to disable fallback and only require `contents: write` + `pull-requests: write`.
 
 ### Close Pull Request (`close-pull-request:`)
 
@@ -1351,6 +1352,20 @@ safe-outputs:
     repositories: ["repo1", "repo2"] # optional: scope to repos
   create-issue:
 ```
+
+#### How GitHub App Tokens Work
+
+When you configure `app:` for safe outputs, tokens are **automatically managed per-job** for enhanced security:
+
+1. **Per-job token minting**: Each safe output job automatically mints its own token via `actions/create-github-app-token` with permissions explicitly scoped to that job's needs
+2. **Permission narrowing**: Token permissions are narrowed to match the job's `permissions:` block - only the permissions required for the safe outputs in that job are granted
+3. **Automatic revocation**: Tokens are explicitly revoked at job end via `DELETE /installation/token`, even if the job fails
+4. **Safe shared configuration**: A broadly-permissioned GitHub App can be safely shared across workflows because tokens are narrowed per-job
+
+> [!TIP]
+> **Why this matters**: You can configure a single GitHub App at the organization level with broad permissions (e.g., `contents: write`, `issues: write`, `pull-requests: write`), and each workflow job will only receive the specific subset of permissions it needs. This provides least-privilege access without requiring per-workflow App configuration.
+
+**Example**: If your workflow only uses `create-issue:`, the minted token will have `contents: read` + `issues: write`, even if your GitHub App has broader permissions configured.
 
 ### Maximum Patch Size (`max-patch-size:`)
 
