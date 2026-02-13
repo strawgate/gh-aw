@@ -983,8 +983,7 @@ async function main() {
     const prReviewBuffer = createReviewBuffer();
 
     // Apply footer config from submit_pull_request_review (if configured)
-    const regularConfig = configs.regular || {};
-    if (regularConfig.submit_pull_request_review && regularConfig.submit_pull_request_review.footer === false) {
+    if (configs.regular?.submit_pull_request_review?.footer === false) {
       prReviewBuffer.setIncludeFooter(false);
     }
 

@@ -738,7 +738,7 @@ async function main() {
     const prReviewBuffer = createReviewBuffer();
 
     // Apply footer config from submit_pull_request_review (if configured)
-    if (config.submit_pull_request_review && config.submit_pull_request_review.footer === false) {
+    if (config.submit_pull_request_review?.footer === false) {
       prReviewBuffer.setIncludeFooter(false);
     }
 

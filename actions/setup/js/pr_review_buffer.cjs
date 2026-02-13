@@ -126,6 +126,7 @@ function createReviewBuffer() {
    */
   function setIncludeFooter(value) {
     includeFooter = value;
+    core.info(`PR review footer ${value ? "enabled" : "disabled"}`);
   }
 
   /**
@@ -181,9 +182,9 @@ function createReviewBuffer() {
     const event = reviewMetadata ? reviewMetadata.event : "COMMENT";
     let body = reviewMetadata ? reviewMetadata.body : "";
 
-    // Add footer to review body if enabled, we have footer context, and a non-empty body.
-    // Skip the footer for body-less reviews (e.g. APPROVE with no body) to keep them clean.
-    if (includeFooter && footerContext && body) {
+    // Add footer to review body if enabled and we have footer context.
+    // Footer is always added (even for body-less reviews) to track which workflow submitted the review.
+    if (includeFooter && footerContext) {
       body += generateFooter(
         footerContext.workflowName,
         footerContext.runUrl,

@@ -441,7 +441,7 @@ describe("pr_review_buffer (factory pattern)", () => {
       expect(callArgs.body).not.toContain("test-workflow");
     });
 
-    it("should skip footer when review body is empty", async () => {
+    it("should add footer even when review body is empty", async () => {
       buffer.addComment({ path: "test.js", line: 1, body: "comment" });
       buffer.setReviewMetadata("", "APPROVE");
       buffer.setReviewContext({
@@ -468,8 +468,8 @@ describe("pr_review_buffer (factory pattern)", () => {
 
       expect(result.success).toBe(true);
       const callArgs = mockGithub.rest.pulls.createReview.mock.calls[0][0];
-      // Body should not be set at all (empty body is not sent to the API)
-      expect(callArgs.body).toBeUndefined();
+      // Footer should still be added to track which workflow submitted the review
+      expect(callArgs.body).toContain("test-workflow");
     });
 
     it("should handle API errors gracefully", async () => {
