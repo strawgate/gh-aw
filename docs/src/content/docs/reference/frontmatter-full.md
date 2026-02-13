@@ -2698,6 +2698,11 @@ safe-outputs:
     # (optional)
     max: 1
 
+    # Controls whether AI-generated footer is added to the review body. When false,
+    # the footer is omitted. Defaults to true.
+    # (optional)
+    footer: true
+
     # GitHub token to use for this specific output type. Overrides global github-token
     # if specified.
     # (optional)
