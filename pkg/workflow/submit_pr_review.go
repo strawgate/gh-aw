@@ -12,7 +12,7 @@ var submitPRReviewLog = logger.New("workflow:submit_pr_review")
 // If this safe output type is not configured, review comments default to event: "COMMENT".
 type SubmitPullRequestReviewConfig struct {
 	BaseSafeOutputConfig `yaml:",inline"`
-	Footer               *bool `yaml:"footer,omitempty"` // Controls whether AI-generated footer is added to the review body. When false, footer is omitted.
+	Footer               *string `yaml:"footer,omitempty"` // Controls when to show footer in PR review body: "always" (default), "none", or "if-body" (only when review has body text)
 }
 
 // parseSubmitPullRequestReviewConfig handles submit-pull-request-review configuration
@@ -31,11 +31,27 @@ func (c *Compiler) parseSubmitPullRequestReviewConfig(outputMap map[string]any) 
 		// Parse common base fields with default max of 1
 		c.parseBaseSafeOutputConfig(configMap, &config.BaseSafeOutputConfig, 1)
 
-		// Parse footer flag
+		// Parse footer configuration (string: "always"/"none"/"if-body", or bool for backward compat)
 		if footer, exists := configMap["footer"]; exists {
-			if footerBool, ok := footer.(bool); ok {
-				config.Footer = &footerBool
-				submitPRReviewLog.Printf("Footer control: %t", footerBool)
+			switch f := footer.(type) {
+			case string:
+				// Validate string values: "always", "none", "if-body"
+				if f == "always" || f == "none" || f == "if-body" {
+					config.Footer = &f
+					submitPRReviewLog.Printf("Footer control: %s", f)
+				} else {
+					submitPRReviewLog.Printf("Invalid footer value: %s (must be 'always', 'none', or 'if-body')", f)
+				}
+			case bool:
+				// Map boolean to string: true -> "always", false -> "none"
+				var footerStr string
+				if f {
+					footerStr = "always"
+				} else {
+					footerStr = "none"
+				}
+				config.Footer = &footerStr
+				submitPRReviewLog.Printf("Footer control (mapped from bool): %s", footerStr)
 			}
 		}
 	} else {

@@ -447,13 +447,15 @@ The YAML frontmatter supports these fields:
     ```yaml
     safe-outputs:
       create-pull-request-review-comment:
-        max: 3                          # Optional: maximum number of review comments (default: 1)
+        max: 3                          # Optional: maximum number of review comments (default: 10)
         side: "RIGHT"                   # Optional: side of diff ("LEFT" or "RIGHT", default: "RIGHT")
-        footer: "always"                # Optional: footer control ("always", "none", "if-body", default: "always")
         target: "*"                     # Optional: "triggering" (default), "*", or number
         target-repo: "owner/repo"       # Optional: cross-repository
+      submit-pull-request-review:
+        max: 1                          # Optional: maximum number of reviews to submit (default: 1)
+        footer: "if-body"               # Optional: footer control ("always", "none", "if-body", default: "always")
     ```
-    **Footer Control**: The `footer` field controls when AI-generated footers appear in PR review comments. Values: `"always"` (default, always include footer), `"none"` (never include footer), `"if-body"` (only include footer when review body is non-empty). Boolean values are also supported: `true` maps to `"always"`, `false` maps to `"none"`.
+    **Footer Control**: The `footer` field on `submit-pull-request-review` controls when AI-generated footers appear in the PR review body. Values: `"always"` (default, always include footer), `"none"` (never include footer), `"if-body"` (only include footer when review body is non-empty). Boolean values are also supported: `true` maps to `"always"`, `false` maps to `"none"`. This is useful for clean approval reviews — with `"if-body"`, approvals without explanatory text appear without a footer.
 
     When using `safe-outputs.create-pull-request-review-comment`, the main job does **not** need `pull-requests: write` permission since review comment creation is handled by a separate job with appropriate permissions.
   - `update-issue:` - Update issue title, body, labels, assignees, or milestone (NOT for closing - use close-issue instead)
