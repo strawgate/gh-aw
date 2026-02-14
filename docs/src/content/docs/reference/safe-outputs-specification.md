@@ -2191,6 +2191,7 @@ This section provides complete definitions for all remaining safe output types. 
 **Notes**:
 - Submits all buffered review comments from `create_pull_request_review_comment`
 - Review status affects PR merge requirements
+- Footer control: `footer` accepts `"always"` (default), `"none"`, or `"if-body"` (only when review body has text); boolean `true`/`false` maps to `"always"`/`"none"`
 
 ---
 

@@ -128,8 +128,8 @@ function createReviewBuffer() {
    * Also accepts boolean values for backward compatibility:
    *   - true → "always"
    *   - false → "none"
-   * Note: create-pull-request-review-comment.footer is converted to a string in Go,
-   * but submit-pull-request-review.footer and global footer are still emitted as booleans.
+   * Note: submit-pull-request-review.footer is emitted as a string by the Go compiler.
+   * The global footer setting is emitted as a boolean and converted by getEffectiveFooterString.
    * @param {string|boolean} value - Footer mode string or boolean
    */
   function setFooterMode(value) {

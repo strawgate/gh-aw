@@ -95,6 +95,18 @@ interface CreatePullRequestReviewCommentConfig extends SafeOutputConfig {
 }
 
 /**
+ * Configuration for submitting a consolidated PR review.
+ * The footer field controls when AI-generated footer is added to the review body:
+ * - "always" (default): Always include footer
+ * - "none": Never include footer
+ * - "if-body": Only include footer when review has body text
+ * Boolean values are also supported: true maps to "always", false maps to "none".
+ */
+interface SubmitPullRequestReviewConfig extends SafeOutputConfig {
+  footer?: boolean | "always" | "none" | "if-body";
+}
+
+/**
  * Configuration for replying to pull request review comments.
  * Inherits common fields (e.g. "github-token") from SafeOutputConfig.
  */
@@ -290,6 +302,7 @@ type SpecificSafeOutputConfig =
   | AddCommentConfig
   | CreatePullRequestConfig
   | CreatePullRequestReviewCommentConfig
+  | SubmitPullRequestReviewConfig
   | CreateCodeScanningAlertConfig
   | AutofixCodeScanningAlertConfig
   | AddLabelsConfig
@@ -324,6 +337,7 @@ export {
   AddCommentConfig,
   CreatePullRequestConfig,
   CreatePullRequestReviewCommentConfig,
+  SubmitPullRequestReviewConfig,
   CreateCodeScanningAlertConfig,
   AutofixCodeScanningAlertConfig,
   AddLabelsConfig,

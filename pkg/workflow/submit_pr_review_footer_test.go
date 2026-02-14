@@ -11,7 +11,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPRReviewCommentFooterConfig(t *testing.T) {
+func TestGetEffectiveFooterString(t *testing.T) {
+	t.Run("returns local footer when set", func(t *testing.T) {
+		local := "if-body"
+		result := getEffectiveFooterString(&local, nil)
+		require.NotNil(t, result, "Should return local footer")
+		assert.Equal(t, "if-body", *result, "Should return local footer value")
+	})
+
+	t.Run("local footer takes precedence over global", func(t *testing.T) {
+		local := "none"
+		globalTrue := true
+		result := getEffectiveFooterString(&local, &globalTrue)
+		require.NotNil(t, result, "Should return local footer")
+		assert.Equal(t, "none", *result, "Local should override global")
+	})
+
+	t.Run("converts global true to always", func(t *testing.T) {
+		globalTrue := true
+		result := getEffectiveFooterString(nil, &globalTrue)
+		require.NotNil(t, result, "Should convert global bool")
+		assert.Equal(t, "always", *result, "Global true should map to always")
+	})
+
+	t.Run("converts global false to none", func(t *testing.T) {
+		globalFalse := false
+		result := getEffectiveFooterString(nil, &globalFalse)
+		require.NotNil(t, result, "Should convert global bool")
+		assert.Equal(t, "none", *result, "Global false should map to none")
+	})
+
+	t.Run("returns nil when both are nil", func(t *testing.T) {
+		result := getEffectiveFooterString(nil, nil)
+		assert.Nil(t, result, "Should return nil when neither is set")
+	})
+}
+
+func TestSubmitPRReviewFooterConfig(t *testing.T) {
 	t.Run("parses footer string values", func(t *testing.T) {
 		testCases := []struct {
 			name     string
@@ -27,12 +63,12 @@ func TestPRReviewCommentFooterConfig(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				compiler := NewCompiler()
 				outputMap := map[string]any{
-					"create-pull-request-review-comment": map[string]any{
+					"submit-pull-request-review": map[string]any{
 						"footer": tc.value,
 					},
 				}
 
-				config := compiler.parsePullRequestReviewCommentsConfig(outputMap)
+				config := compiler.parseSubmitPullRequestReviewConfig(outputMap)
 				require.NotNil(t, config, "Config should be parsed")
 				require.NotNil(t, config.Footer, "Footer should be set")
 				assert.Equal(t, tc.expected, *config.Footer, "Footer value should match")
@@ -54,14 +90,14 @@ func TestPRReviewCommentFooterConfig(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				compiler := NewCompiler()
 				outputMap := map[string]any{
-					"create-pull-request-review-comment": map[string]any{
+					"submit-pull-request-review": map[string]any{
 						"footer": tc.value,
 					},
 				}
 
-				config := compiler.parsePullRequestReviewCommentsConfig(outputMap)
+				config := compiler.parseSubmitPullRequestReviewConfig(outputMap)
 				require.NotNil(t, config, "Config should be parsed")
-				require.NotNil(t, config.Footer, "Footer should be set")
+				require.NotNil(t, config.Footer, "Footer value should be set")
 				assert.Equal(t, tc.expected, *config.Footer, "Footer value should be mapped from boolean")
 			})
 		}
@@ -70,17 +106,32 @@ func TestPRReviewCommentFooterConfig(t *testing.T) {
 	t.Run("ignores invalid footer values", func(t *testing.T) {
 		compiler := NewCompiler()
 		outputMap := map[string]any{
-			"create-pull-request-review-comment": map[string]any{
+			"submit-pull-request-review": map[string]any{
 				"footer": "invalid-value",
 			},
 		}
 
-		config := compiler.parsePullRequestReviewCommentsConfig(outputMap)
+		config := compiler.parseSubmitPullRequestReviewConfig(outputMap)
 		require.NotNil(t, config, "Config should be parsed")
 		assert.Nil(t, config.Footer, "Invalid footer value should be ignored")
 	})
 
 	t.Run("footer not set when omitted", func(t *testing.T) {
+		compiler := NewCompiler()
+		outputMap := map[string]any{
+			"submit-pull-request-review": map[string]any{
+				"max": 1,
+			},
+		}
+
+		config := compiler.parseSubmitPullRequestReviewConfig(outputMap)
+		require.NotNil(t, config, "Config should be parsed")
+		assert.Nil(t, config.Footer, "Footer should be nil when not configured")
+	})
+}
+
+func TestCreatePRReviewCommentNoFooter(t *testing.T) {
+	t.Run("create-pull-request-review-comment does not have footer field", func(t *testing.T) {
 		compiler := NewCompiler()
 		outputMap := map[string]any{
 			"create-pull-request-review-comment": map[string]any{
@@ -90,21 +141,25 @@ func TestPRReviewCommentFooterConfig(t *testing.T) {
 
 		config := compiler.parsePullRequestReviewCommentsConfig(outputMap)
 		require.NotNil(t, config, "Config should be parsed")
-		assert.Nil(t, config.Footer, "Footer should be nil when not configured")
+		// CreatePullRequestReviewCommentsConfig no longer has a Footer field;
+		// footer control belongs on submit-pull-request-review
 	})
 }
 
-func TestPRReviewCommentFooterInHandlerConfig(t *testing.T) {
-	t.Run("footer included in handler config", func(t *testing.T) {
+func TestSubmitPRReviewFooterInHandlerConfig(t *testing.T) {
+	t.Run("footer included in submit_pull_request_review handler config", func(t *testing.T) {
 		compiler := NewCompiler()
 		footerValue := "if-body"
 		workflowData := &WorkflowData{
 			Name: "Test",
 			SafeOutputs: &SafeOutputsConfig{
+				SubmitPullRequestReview: &SubmitPullRequestReviewConfig{
+					BaseSafeOutputConfig: BaseSafeOutputConfig{Max: 1},
+					Footer:               &footerValue,
+				},
 				CreatePullRequestReviewComments: &CreatePullRequestReviewCommentsConfig{
 					BaseSafeOutputConfig: BaseSafeOutputConfig{Max: 10},
 					Side:                 "RIGHT",
-					Footer:               &footerValue,
 				},
 			},
 		}
@@ -127,9 +182,15 @@ func TestPRReviewCommentFooterInHandlerConfig(t *testing.T) {
 					err := json.Unmarshal([]byte(jsonStr), &handlerConfig)
 					require.NoError(t, err, "Should unmarshal handler config")
 
+					submitConfig, ok := handlerConfig["submit_pull_request_review"].(map[string]any)
+					require.True(t, ok, "submit_pull_request_review config should exist")
+					assert.Equal(t, "if-body", submitConfig["footer"], "Footer should be in submit handler config")
+
+					// create_pull_request_review_comment should NOT have footer
 					reviewCommentConfig, ok := handlerConfig["create_pull_request_review_comment"].(map[string]any)
 					require.True(t, ok, "create_pull_request_review_comment config should exist")
-					assert.Equal(t, "if-body", reviewCommentConfig["footer"], "Footer should be in handler config")
+					_, hasFooter := reviewCommentConfig["footer"]
+					assert.False(t, hasFooter, "Footer should not be in review comment handler config")
 				}
 			}
 		}
@@ -140,9 +201,8 @@ func TestPRReviewCommentFooterInHandlerConfig(t *testing.T) {
 		workflowData := &WorkflowData{
 			Name: "Test",
 			SafeOutputs: &SafeOutputsConfig{
-				CreatePullRequestReviewComments: &CreatePullRequestReviewCommentsConfig{
-					BaseSafeOutputConfig: BaseSafeOutputConfig{Max: 10},
-					Side:                 "RIGHT",
+				SubmitPullRequestReview: &SubmitPullRequestReviewConfig{
+					BaseSafeOutputConfig: BaseSafeOutputConfig{Max: 1},
 				},
 			},
 		}
@@ -165,9 +225,9 @@ func TestPRReviewCommentFooterInHandlerConfig(t *testing.T) {
 					err := json.Unmarshal([]byte(jsonStr), &handlerConfig)
 					require.NoError(t, err, "Should unmarshal handler config")
 
-					reviewCommentConfig, ok := handlerConfig["create_pull_request_review_comment"].(map[string]any)
-					require.True(t, ok, "create_pull_request_review_comment config should exist")
-					_, hasFooter := reviewCommentConfig["footer"]
+					submitConfig, ok := handlerConfig["submit_pull_request_review"].(map[string]any)
+					require.True(t, ok, "submit_pull_request_review config should exist")
+					_, hasFooter := submitConfig["footer"]
 					assert.False(t, hasFooter, "Footer should not be in handler config when not set")
 				}
 			}

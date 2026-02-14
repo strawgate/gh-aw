@@ -740,14 +740,10 @@ async function main() {
     const prReviewBuffer = createReviewBuffer();
 
     // Apply footer config with priority:
-    // 1. create_pull_request_review_comment.footer (highest priority)
-    // 2. submit_pull_request_review.footer (fallback)
-    // 3. Default: "always"
+    // 1. submit_pull_request_review.footer (highest priority — footer controls review body)
+    // 2. Default: "always"
     let footerConfig = undefined;
-    if (config.create_pull_request_review_comment?.footer !== undefined) {
-      footerConfig = config.create_pull_request_review_comment.footer;
-      core.info(`Using footer config from create_pull_request_review_comment: ${footerConfig}`);
-    } else if (config.submit_pull_request_review?.footer !== undefined) {
+    if (config.submit_pull_request_review?.footer !== undefined) {
       footerConfig = config.submit_pull_request_review.footer;
       core.info(`Using footer config from submit_pull_request_review: ${footerConfig}`);
     }

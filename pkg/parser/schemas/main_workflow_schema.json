@@ -4987,8 +4987,18 @@
                   "maximum": 10
                 },
                 "footer": {
-                  "type": "boolean",
-                  "description": "Controls whether AI-generated footer is added to the review body. When false, the footer is omitted. Defaults to true."
+                  "oneOf": [
+                    {
+                      "type": "boolean",
+                      "description": "Controls whether AI-generated footer is added to the review body. true maps to 'always', false maps to 'none'."
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["always", "none", "if-body"],
+                      "description": "Controls when AI-generated footer is added to the review body: 'always' (default), 'none' (never), or 'if-body' (only when review has body text)."
+                    }
+                  ],
+                  "description": "Controls when AI-generated footer is added to the review body. Accepts boolean (true/false) or string ('always', 'none', 'if-body'). The 'if-body' mode is useful for clean approval reviews without body text. Defaults to 'always'."
                 },
                 "github-token": {
                   "$ref": "#/$defs/github_token",

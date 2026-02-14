@@ -19,6 +19,25 @@ func getEffectiveFooter(localFooter *bool, globalFooter *bool) *bool {
 	return globalFooter
 }
 
+// getEffectiveFooterString returns the effective footer string value for a config.
+// If the local string footer is set, use it; otherwise convert the global bool footer.
+// Returns nil if neither is set (default to "always" in JavaScript).
+func getEffectiveFooterString(localFooter *string, globalFooter *bool) *string {
+	if localFooter != nil {
+		return localFooter
+	}
+	if globalFooter != nil {
+		var s string
+		if *globalFooter {
+			s = "always"
+		} else {
+			s = "none"
+		}
+		return &s
+	}
+	return nil
+}
+
 // handlerConfigBuilder provides a fluent API for building handler configurations
 type handlerConfigBuilder struct {
 	config map[string]any
@@ -303,7 +322,6 @@ var handlerRegistry = map[string]handlerBuilder{
 			AddIfNotEmpty("target", c.Target).
 			AddIfNotEmpty("target-repo", c.TargetRepoSlug).
 			AddStringSlice("allowed_repos", c.AllowedRepos).
-			AddStringPtr("footer", c.Footer).
 			Build()
 	},
 	"submit_pull_request_review": func(cfg *SafeOutputsConfig) map[string]any {
@@ -313,7 +331,7 @@ var handlerRegistry = map[string]handlerBuilder{
 		c := cfg.SubmitPullRequestReview
 		return newHandlerConfigBuilder().
 			AddIfPositive("max", c.Max).
-			AddBoolPtr("footer", getEffectiveFooter(c.Footer, cfg.Footer)).
+			AddStringPtr("footer", getEffectiveFooterString(c.Footer, cfg.Footer)).
 			Build()
 	},
 	"reply_to_pull_request_review_comment": func(cfg *SafeOutputsConfig) map[string]any {
