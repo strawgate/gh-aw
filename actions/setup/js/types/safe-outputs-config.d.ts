@@ -95,6 +95,17 @@ interface CreatePullRequestReviewCommentConfig extends SafeOutputConfig {
 }
 
 /**
+ * Configuration for replying to pull request review comments.
+ * Inherits common fields (e.g. "github-token") from SafeOutputConfig.
+ */
+interface ReplyToPullRequestReviewCommentConfig extends SafeOutputConfig {
+  target?: string;
+  "target-repo"?: string;
+  "allowed-repos"?: string[];
+  footer?: boolean;
+}
+
+/**
  * Configuration for creating code scanning alerts
  */
 interface CreateCodeScanningAlertConfig extends SafeOutputConfig {
@@ -282,6 +293,7 @@ type SpecificSafeOutputConfig =
   | NoOpConfig
   | MissingToolConfig
   | LinkSubIssueConfig
+  | ReplyToPullRequestReviewCommentConfig
   | ThreatDetectionConfig;
 
 type SafeOutputConfigs = Record<string, SafeOutputConfig | SpecificSafeOutputConfig>;
@@ -314,6 +326,7 @@ export {
   NoOpConfig,
   MissingToolConfig,
   LinkSubIssueConfig,
+  ReplyToPullRequestReviewCommentConfig,
   ThreatDetectionConfig,
   SpecificSafeOutputConfig,
   // Safe job configuration types

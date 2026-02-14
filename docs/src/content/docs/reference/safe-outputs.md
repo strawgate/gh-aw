@@ -40,6 +40,7 @@ The agent requests issue creation; a separate job with `issues: write` creates i
 - [**Update PR**](#pull-request-updates-update-pull-request) (`update-pull-request`) - Update PR title or body (max: 1)
 - [**Close PR**](#close-pull-request-close-pull-request) (`close-pull-request`) - Close pull requests without merging (max: 10)
 - [**PR Review Comments**](#pr-review-comments-create-pull-request-review-comment) (`create-pull-request-review-comment`) - Create review comments on code lines (max: 10)
+- [**Reply to PR Review Comment**](#reply-to-pr-review-comment-reply-to-pull-request-review-comment) (`reply-to-pull-request-review-comment`) - Reply to existing review comments (max: 10)
 - [**Push to PR Branch**](#push-to-pr-branch-push-to-pull-request-branch) (`push-to-pull-request-branch`) - Push changes to PR branch (max: 1, same-repo only)
 
 ### Labels, Assignments & Reviews
@@ -685,6 +686,20 @@ safe-outputs:
     side: "RIGHT"             # "LEFT" or "RIGHT" (default: "RIGHT")
     target: "*"               # "triggering" (default), "*", or number
     target-repo: "owner/repo" # cross-repository
+```
+
+### Reply to PR Review Comment (`reply-to-pull-request-review-comment:`)
+
+Replies to existing review comments on pull requests. Use this to respond to reviewer feedback, answer questions, or acknowledge comments. The `comment_id` must be the numeric ID of an existing review comment.
+
+```yaml wrap
+safe-outputs:
+  reply-to-pull-request-review-comment:
+    max: 10                              # max replies (default: 10)
+    target: "triggering"                 # "triggering" (default), "*", or number
+    target-repo: "owner/repo"            # cross-repository
+    allowed-repos: ["org/other-repo"]    # additional allowed repositories
+    footer: true                         # add AI-generated footer (default: true)
 ```
 
 ### Submit PR Review (`submit-pull-request-review:`)

@@ -313,6 +313,28 @@
     }
   },
   {
+    "name": "reply_to_pull_request_review_comment",
+    "description": "Reply to an existing review comment on a pull request. Use this to respond to feedback, answer questions, or acknowledge review comments. The comment_id must be the numeric ID of an existing review comment.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["comment_id", "body"],
+      "properties": {
+        "comment_id": {
+          "oneOf": [
+            { "type": "number", "minimum": 1 },
+            { "type": "string", "pattern": "^[1-9][0-9]*$" }
+          ],
+          "description": "The numeric ID of the review comment to reply to."
+        },
+        "body": {
+          "type": "string",
+          "description": "The reply text in Markdown format. Provide a clear response to the review comment."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "create_code_scanning_alert",
     "description": "Create a code scanning alert for security vulnerabilities, code quality issues, or other findings. Alerts appear in the repository's Security tab and integrate with GitHub's security features. Use this for automated security analysis results.",
     "inputSchema": {

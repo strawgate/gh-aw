@@ -468,7 +468,8 @@ type SafeOutputsConfig struct {
 	AddComments                     *AddCommentsConfig                     `yaml:"add-comments,omitempty"`
 	CreatePullRequests              *CreatePullRequestsConfig              `yaml:"create-pull-requests,omitempty"`
 	CreatePullRequestReviewComments *CreatePullRequestReviewCommentsConfig `yaml:"create-pull-request-review-comments,omitempty"`
-	SubmitPullRequestReview         *SubmitPullRequestReviewConfig         `yaml:"submit-pull-request-review,omitempty"` // Submit a PR review with status (APPROVE, REQUEST_CHANGES, COMMENT)
+	SubmitPullRequestReview         *SubmitPullRequestReviewConfig         `yaml:"submit-pull-request-review,omitempty"`           // Submit a PR review with status (APPROVE, REQUEST_CHANGES, COMMENT)
+	ReplyToPullRequestReviewComment *ReplyToPullRequestReviewCommentConfig `yaml:"reply-to-pull-request-review-comment,omitempty"` // Reply to existing review comments on PRs
 	CreateCodeScanningAlerts        *CreateCodeScanningAlertsConfig        `yaml:"create-code-scanning-alerts,omitempty"`
 	AutofixCodeScanningAlert        *AutofixCodeScanningAlertConfig        `yaml:"autofix-code-scanning-alert,omitempty"`
 	AddLabels                       *AddLabelsConfig                       `yaml:"add-labels,omitempty"`

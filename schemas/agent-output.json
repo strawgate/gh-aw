@@ -53,7 +53,8 @@
         { "$ref": "#/$defs/HideCommentOutput" },
         { "$ref": "#/$defs/DispatchWorkflowOutput" },
         { "$ref": "#/$defs/AutofixCodeScanningAlertOutput" },
-        { "$ref": "#/$defs/SubmitPullRequestReviewOutput" }
+        { "$ref": "#/$defs/SubmitPullRequestReviewOutput" },
+        { "$ref": "#/$defs/ReplyToPullRequestReviewCommentOutput" }
       ]
     },
     "CreateIssueOutput": {
@@ -338,6 +339,30 @@
           }
         }
       ]
+    },
+    "ReplyToPullRequestReviewCommentOutput": {
+      "title": "Reply to Pull Request Review Comment Output",
+      "description": "Output for replying to an existing review comment on a pull request",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "reply_to_pull_request_review_comment"
+        },
+        "comment_id": {
+          "oneOf": [
+            { "type": "number", "minimum": 1 },
+            { "type": "string", "pattern": "^[1-9][0-9]*$" }
+          ],
+          "description": "The numeric ID of the review comment to reply to"
+        },
+        "body": {
+          "type": "string",
+          "description": "The reply body text",
+          "minLength": 1
+        }
+      },
+      "required": ["type", "comment_id", "body"],
+      "additionalProperties": false
     },
     "CreateDiscussionOutput": {
       "title": "Create Discussion Output",
