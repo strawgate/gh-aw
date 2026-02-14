@@ -9,9 +9,9 @@ const entry = route?.entry;
 const isBlogPost = Astro.url.pathname.includes('/blog/');
 
 // Social images - use combined image for blog posts, hero for everything else
-const heroImage = 'https://github.github.com/gh-aw/og-hero-1200x630.png';
-const blogCombinedImage = 'https://github.github.com/gh-aw/blog-combined.png';
-const socialImage = isBlogPost ? blogCombinedImage : heroImage;
+const heroImage = 'https://github.github.com/gh-aw/og-hero-1200x630.jpg';
+//const blogCombinedImage = 'https://github.github.com/gh-aw/blog-combined.png';
+const socialImage = heroImage;
 
 // Build enhanced OG title: "Page Title | Site Name" (target: 50-60 chars)
 const siteTitle = 'GitHub Agentic Workflows';
