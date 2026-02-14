@@ -709,14 +709,12 @@ safe-outputs:
 
 Resolves review threads on pull requests. Allows AI agents to mark review conversations as resolved after addressing the feedback. Uses the GitHub GraphQL API with the `resolveReviewThread` mutation.
 
+Resolution is scoped to the triggering PR only — the handler validates that each thread belongs to the triggering pull request before resolving it.
+
 ```yaml wrap
 safe-outputs:
   resolve-pull-request-review-thread:
     max: 10           # max threads to resolve (default: 10)
-    target: "*"       # "triggering" (default), "*", or PR number
-    target-repo: "owner/repo"  # cross-repository
-    allowed-repos:    # allowed repos for cross-repo resolution
-      - "org/repo1"
 ```
 
 **Agent output format:**

@@ -95,12 +95,11 @@ interface CreatePullRequestReviewCommentConfig extends SafeOutputConfig {
 }
 
 /**
- * Configuration for resolving pull request review threads
+ * Configuration for resolving pull request review threads.
+ * Resolution is scoped to the triggering PR only.
  */
 interface ResolvePullRequestReviewThreadConfig extends SafeOutputConfig {
-  target?: string;
-  "target-repo"?: string;
-  "allowed-repos"?: string[];
+  // Only max is supported — resolution is always scoped to the triggering PR
 }
 
 /**

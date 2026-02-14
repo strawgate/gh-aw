@@ -2711,32 +2711,18 @@ safe-outputs:
   # Option 2: Enable PR review submission with default configuration
   submit-pull-request-review: null
 
-  # Enable AI agents to resolve review threads on pull requests after addressing
-  # feedback.
+  # Enable AI agents to resolve review threads on the triggering pull request after
+  # addressing feedback.
   # (optional)
   # This field supports multiple formats (oneOf):
 
-  # Option 1: Configuration for resolving review threads on pull requests. Allows AI
-  # agents to mark review conversations as resolved after addressing feedback.
+  # Option 1: Configuration for resolving review threads on pull requests.
+  # Resolution is scoped to the triggering PR only — threads on other PRs cannot be
+  # resolved.
   resolve-pull-request-review-thread:
     # Maximum number of review threads to resolve (default: 10)
     # (optional)
     max: 1
-
-    # Target for review thread resolution. Use 'triggering' (default) for the
-    # triggering PR, '*' for any PR, or a specific PR number.
-    # (optional)
-    target: "example-value"
-
-    # Default target repository for cross-repo thread resolution (format:
-    # 'owner/repo')
-    # (optional)
-    target-repo: "example-value"
-
-    # Allowed repositories for cross-repo thread resolution (format: 'owner/repo')
-    # (optional)
-    allowed-repos: []
-      # Array of strings
 
     # GitHub token to use for this specific output type. Overrides global github-token
     # if specified.

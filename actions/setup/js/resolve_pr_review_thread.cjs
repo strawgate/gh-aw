@@ -13,6 +13,31 @@ const { getErrorMessage } = require("./error_helpers.cjs");
 const HANDLER_TYPE = "resolve_pull_request_review_thread";
 
 /**
+ * Look up a review thread's parent PR number via the GraphQL API.
+ * Used to validate the thread belongs to the triggering PR before resolving.
+ * @param {any} github - GitHub GraphQL instance
+ * @param {string} threadId - Review thread node ID (e.g., 'PRRT_kwDOABCD...')
+ * @returns {Promise<number|null>} The PR number the thread belongs to, or null if not found
+ */
+async function getThreadPullRequestNumber(github, threadId) {
+  const query = /* GraphQL */ `
+    query ($threadId: ID!) {
+      node(id: $threadId) {
+        ... on PullRequestReviewThread {
+          pullRequest {
+            number
+          }
+        }
+      }
+    }
+  `;
+
+  const result = await github.graphql(query, { threadId });
+
+  return result?.node?.pullRequest?.number ?? null;
+}
+
+/**
  * Resolve a pull request review thread using the GraphQL API.
  * @param {any} github - GitHub GraphQL instance
  * @param {string} threadId - Review thread node ID (e.g., 'PRRT_kwDOABCD...')
@@ -40,14 +65,21 @@ async function resolveReviewThreadAPI(github, threadId) {
 
 /**
  * Main handler factory for resolve_pull_request_review_thread
- * Returns a message handler function that processes individual resolve messages
+ * Returns a message handler function that processes individual resolve messages.
+ *
+ * Resolution is scoped to the triggering PR only — the handler validates that each
+ * thread belongs to the triggering pull request before resolving it. This prevents
+ * agents from resolving threads on unrelated PRs.
  * @type {HandlerFactoryFunction}
  */
 async function main(config = {}) {
   // Extract configuration
   const maxCount = config.max || 10;
 
-  core.info(`Resolve PR review thread configuration: max=${maxCount}`);
+  // Determine the triggering PR number from context
+  const triggeringPRNumber = context.payload?.pull_request?.number || (context.payload?.issue?.pull_request ? context.payload.issue.number : undefined);
+
+  core.info(`Resolve PR review thread configuration: max=${maxCount}, triggeringPR=${triggeringPRNumber || "none"}`);
 
   // Track how many items we've processed for max limit
   let processedCount = 0;
@@ -83,7 +115,34 @@ async function main(config = {}) {
         };
       }
 
-      core.info(`Resolving review thread: ${threadId}`);
+      // Validate triggering PR context
+      if (!triggeringPRNumber) {
+        core.warning("Cannot resolve review thread: not running in a pull request context");
+        return {
+          success: false,
+          error: "Cannot resolve review threads outside of a pull request context",
+        };
+      }
+
+      // Look up the thread to validate it belongs to the triggering PR
+      const threadPRNumber = await getThreadPullRequestNumber(github, threadId);
+      if (threadPRNumber === null) {
+        core.warning(`Review thread not found or not a PullRequestReviewThread: ${threadId}`);
+        return {
+          success: false,
+          error: `Review thread not found: ${threadId}`,
+        };
+      }
+
+      if (threadPRNumber !== triggeringPRNumber) {
+        core.warning(`Thread ${threadId} belongs to PR #${threadPRNumber}, not triggering PR #${triggeringPRNumber}`);
+        return {
+          success: false,
+          error: `Thread belongs to PR #${threadPRNumber}, but only threads on the triggering PR #${triggeringPRNumber} can be resolved`,
+        };
+      }
+
+      core.info(`Resolving review thread: ${threadId} (PR #${triggeringPRNumber})`);
 
       const resolveResult = await resolveReviewThreadAPI(github, threadId);
 

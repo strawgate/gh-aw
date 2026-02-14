@@ -867,11 +867,6 @@ func addRepoParameterIfNeeded(tool map[string]any, toolName string, safeOutputs 
 			hasAllowedRepos = len(config.AllowedRepos) > 0
 			targetRepoSlug = config.TargetRepoSlug
 		}
-	case "resolve_pull_request_review_thread":
-		if config := safeOutputs.ResolvePullRequestReviewThread; config != nil {
-			hasAllowedRepos = len(config.AllowedRepos) > 0
-			targetRepoSlug = config.TargetRepoSlug
-		}
 	case "create_agent_session":
 		if config := safeOutputs.CreateAgentSessions; config != nil {
 			hasAllowedRepos = len(config.AllowedRepos) > 0

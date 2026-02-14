@@ -323,9 +323,6 @@ var handlerRegistry = map[string]handlerBuilder{
 		c := cfg.ResolvePullRequestReviewThread
 		return newHandlerConfigBuilder().
 			AddIfPositive("max", c.Max).
-			AddIfNotEmpty("target", c.Target).
-			AddIfNotEmpty("target-repo", c.TargetRepoSlug).
-			AddStringSlice("allowed_repos", c.AllowedRepos).
 			Build()
 	},
 	"create_pull_request": func(cfg *SafeOutputsConfig) map[string]any {
