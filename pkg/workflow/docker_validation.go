@@ -102,9 +102,7 @@ func validateDockerImage(image string, verbose bool) error {
 	// which is common on macOS development machines.
 	if !isDockerDaemonRunning() {
 		dockerValidationLog.Print("Docker daemon not running, skipping image validation")
-		if verbose {
-			fmt.Fprintln(os.Stderr, console.FormatWarningMessage(fmt.Sprintf("Docker daemon not running - skipping validation for container image '%s'", image)))
-		}
+		fmt.Fprintln(os.Stderr, console.FormatErrorMessage(fmt.Sprintf("Docker daemon not running - skipping container image validation for '%s'", image)))
 		return nil
 	}
 
