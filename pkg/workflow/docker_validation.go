@@ -32,10 +32,12 @@
 package workflow
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/github/gh-aw/pkg/console"
@@ -45,18 +47,63 @@ import (
 
 var dockerValidationLog = logger.New("workflow:docker_validation")
 
+// dockerDaemonCheckTimeout is how long to wait for `docker info` to respond.
+// If the daemon isn't running, this prevents long hangs on every docker command.
+const dockerDaemonCheckTimeout = 3 * time.Second
+
+// Cached result of Docker daemon availability check.
+// Checked once per process to avoid repeated slow checks when daemon is down.
+var (
+	dockerDaemonOnce      sync.Once
+	dockerDaemonAvailable bool
+)
+
+// isDockerDaemonRunning checks if the Docker daemon is responsive.
+// Uses a short timeout to avoid hanging when Docker is installed but the daemon is stopped.
+// Results are cached for the process lifetime.
+func isDockerDaemonRunning() bool {
+	dockerDaemonOnce.Do(func() {
+		dockerValidationLog.Print("Checking if Docker daemon is running")
+		ctx, cancel := context.WithTimeout(context.Background(), dockerDaemonCheckTimeout)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "docker", "info")
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		err := cmd.Run()
+
+		dockerDaemonAvailable = err == nil
+		if !dockerDaemonAvailable {
+			dockerValidationLog.Printf("Docker daemon not running or not responsive: %v", err)
+		} else {
+			dockerValidationLog.Print("Docker daemon is running")
+		}
+	})
+	return dockerDaemonAvailable
+}
+
 // validateDockerImage checks if a Docker image exists and is accessible
-// Returns nil if docker is not available (with a warning printed)
+// Returns nil if docker is not available or the daemon is not running (with a warning printed)
 func validateDockerImage(image string, verbose bool) error {
 	dockerValidationLog.Printf("Validating Docker image: %s", image)
 
-	// Check if docker is available
+	// Check if docker CLI is available on PATH
 	_, err := exec.LookPath("docker")
 	if err != nil {
 		dockerValidationLog.Print("Docker not available, skipping image validation")
-		// Docker not available - print warning and skip validation
 		if verbose {
 			fmt.Fprintln(os.Stderr, console.FormatWarningMessage(fmt.Sprintf("Docker not available - skipping validation for container image '%s'", image)))
+		}
+		return nil
+	}
+
+	// Check if Docker daemon is actually running (cached check with short timeout).
+	// This prevents multi-minute hangs when Docker Desktop is installed but not running,
+	// which is common on macOS development machines.
+	if !isDockerDaemonRunning() {
+		dockerValidationLog.Print("Docker daemon not running, skipping image validation")
+		if verbose {
+			fmt.Fprintln(os.Stderr, console.FormatWarningMessage(fmt.Sprintf("Docker daemon not running - skipping validation for container image '%s'", image)))
 		}
 		return nil
 	}
