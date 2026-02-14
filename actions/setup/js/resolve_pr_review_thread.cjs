@@ -182,4 +182,4 @@ async function main(config = {}) {
   };
 }
 
-module.exports = { main, HANDLER_TYPE };
+module.exports = { main, HANDLER_TYPE, getTriggeringPRNumber };

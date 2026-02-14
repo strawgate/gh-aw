@@ -317,3 +317,49 @@ describe("resolve_pr_review_thread", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("getTriggeringPRNumber", () => {
+  it("should return pull_request.number for pull_request events", () => {
+    const { getTriggeringPRNumber } = require("./resolve_pr_review_thread.cjs");
+    const payload = { pull_request: { number: 7 } };
+    expect(getTriggeringPRNumber(payload)).toBe(7);
+  });
+
+  it("should return issue.number for issue_comment events on a PR", () => {
+    const { getTriggeringPRNumber } = require("./resolve_pr_review_thread.cjs");
+    const payload = { issue: { number: 15, pull_request: { url: "https://api.github.com/..." } } };
+    expect(getTriggeringPRNumber(payload)).toBe(15);
+  });
+
+  it("should return undefined when payload has no PR context", () => {
+    const { getTriggeringPRNumber } = require("./resolve_pr_review_thread.cjs");
+    const payload = { repository: { html_url: "https://github.com/owner/repo" } };
+    expect(getTriggeringPRNumber(payload)).toBeUndefined();
+  });
+
+  it("should return undefined for an empty payload", () => {
+    const { getTriggeringPRNumber } = require("./resolve_pr_review_thread.cjs");
+    expect(getTriggeringPRNumber({})).toBeUndefined();
+  });
+
+  it("should return undefined for a nullish payload", () => {
+    const { getTriggeringPRNumber } = require("./resolve_pr_review_thread.cjs");
+    expect(getTriggeringPRNumber(null)).toBeUndefined();
+    expect(getTriggeringPRNumber(undefined)).toBeUndefined();
+  });
+
+  it("should prefer pull_request.number over issue.number", () => {
+    const { getTriggeringPRNumber } = require("./resolve_pr_review_thread.cjs");
+    const payload = {
+      pull_request: { number: 10 },
+      issue: { number: 20, pull_request: { url: "https://api.github.com/..." } },
+    };
+    expect(getTriggeringPRNumber(payload)).toBe(10);
+  });
+
+  it("should not return issue.number when issue has no pull_request field", () => {
+    const { getTriggeringPRNumber } = require("./resolve_pr_review_thread.cjs");
+    const payload = { issue: { number: 30 } };
+    expect(getTriggeringPRNumber(payload)).toBeUndefined();
+  });
+});
