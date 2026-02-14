@@ -30,7 +30,7 @@
 #     - shared/python-dataviz.md
 #     - shared/reporting.md
 #
-# frontmatter-hash: aac6ce449b2eb908309c68389f1d60afec29c77cb483f6ba2a93b4b1ef6e5db0
+# frontmatter-hash: deaabcb488823e11d1ab906ba9ac51c2aaab720c7e08fab115b541b522451fa5
 
 name: "Organization Health Report"
 "on":
@@ -193,7 +193,7 @@ jobs:
               engine_name: "GitHub Copilot CLI",
               model: process.env.GH_AW_MODEL_AGENT_COPILOT || "",
               version: "",
-              agent_version: "0.0.409",
+              agent_version: "0.0.410",
               workflow_name: "Organization Health Report",
               experimental: false,
               supports_tools_allowlist: true,
@@ -231,7 +231,7 @@ jobs:
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       - name: Install GitHub Copilot CLI
-        run: /opt/gh-aw/actions/install_copilot_cli.sh 0.0.409
+        run: /opt/gh-aw/actions/install_copilot_cli.sh 0.0.410
       - name: Install awf binary
         run: bash /opt/gh-aw/actions/install_awf_binary.sh v0.17.0
       - name: Validate lockdown mode requirements
@@ -1053,7 +1053,7 @@ jobs:
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       - name: Install GitHub Copilot CLI
-        run: /opt/gh-aw/actions/install_copilot_cli.sh 0.0.409
+        run: /opt/gh-aw/actions/install_copilot_cli.sh 0.0.410
       - name: Execute GitHub Copilot CLI
         id: agentic_execution
         # Copilot CLI tool arguments (sorted):
