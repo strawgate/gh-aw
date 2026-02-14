@@ -12,10 +12,12 @@
 //
 // # Validation Pattern: Warning vs Error
 //
-// Docker image validation uses a flexible approach:
-//   - If Docker is not available, a warning is emitted but validation is skipped
+// Docker image validation returns errors for all failure cases. The caller
+// (validateContainerImages) collects these and surfaces them as compiler warnings:
+//   - If Docker is not installed, returns an error
+//   - If the Docker daemon is not running, returns an error (with fast timeout check)
 //   - If an image cannot be pulled due to authentication (private repo), validation passes
-//   - If an image truly doesn't exist, validation fails with an error
+//   - If an image truly doesn't exist, returns an error
 //   - Verbose mode provides detailed validation feedback
 //
 // # When to Add Validation Here
@@ -34,13 +36,11 @@ package workflow
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/github/gh-aw/pkg/console"
 	"github.com/github/gh-aw/pkg/constants"
 	"github.com/github/gh-aw/pkg/logger"
 )
@@ -82,20 +82,17 @@ func isDockerDaemonRunning() bool {
 	return dockerDaemonAvailable
 }
 
-// validateDockerImage checks if a Docker image exists and is accessible
-// Returns nil if docker is not available (with a warning printed)
+// validateDockerImage checks if a Docker image exists and is accessible.
+// Returns an error if Docker is not installed, the daemon is not running,
+// or the image cannot be found. The caller treats these as warnings.
 func validateDockerImage(image string, verbose bool) error {
 	dockerValidationLog.Printf("Validating Docker image: %s", image)
 
-	// Check if docker is available
+	// Check if docker CLI is available on PATH
 	_, err := exec.LookPath("docker")
 	if err != nil {
-		dockerValidationLog.Print("Docker not available, skipping image validation")
-		// Docker not available - print warning and skip validation
-		if verbose {
-			fmt.Fprintln(os.Stderr, console.FormatWarningMessage(fmt.Sprintf("Docker not available - skipping validation for container image '%s'", image)))
-		}
-		return nil
+		dockerValidationLog.Print("Docker not installed, cannot validate image")
+		return fmt.Errorf("Docker not installed - could not validate container image '%s'. Install Docker or remove container-based tools", image)
 	}
 
 	// Check if Docker daemon is actually running (cached check with short timeout).
