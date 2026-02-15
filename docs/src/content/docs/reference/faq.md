@@ -291,6 +291,73 @@ This requires only `contents: write` + `pull-requests: write`, but workflows wil
 
 See [Pull Request Creation](/gh-aw/reference/safe-outputs/#pull-request-creation-create-pull-request) for complete configuration details and the fallback mechanism explanation.
 
+### Why don't pull requests created by agentic workflows trigger my CI checks?
+
+This is expected GitHub Actions security behavior. Pull requests created using the default `GITHUB_TOKEN` or by the GitHub Actions bot user **do not trigger workflow runs** on `pull_request`, `pull_request_target`, or `push` events. This is a [GitHub Actions security feature](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow) designed to prevent accidental recursive workflow execution.
+
+**Why GitHub implements this protection:**
+
+GitHub Actions prevents the `GITHUB_TOKEN` from triggering new workflow runs to avoid infinite loops and uncontrolled automation chains. Without this protection, a workflow could create a PR, which triggers another workflow, which creates another PR, and so on indefinitely.
+
+**Workarounds:**
+
+If you need CI checks to run on PRs created by agentic workflows, you have three options:
+
+**Option 1: Use a Personal Access Token (PAT)**
+
+Configure your workflow to use a PAT instead of `GITHUB_TOKEN`. This allows PR creation to trigger CI workflows:
+
+```yaml wrap
+# In your workflow frontmatter
+env:
+  GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+```
+
+The PAT must have `repo` scope (or `public_repo` for public repositories only) and should belong to a service account or automation user rather than a personal account.
+
+> [!CAUTION]
+> Using a PAT bypasses GitHub's recursive workflow protection. Ensure your CI workflows cannot trigger the PR creation workflow to avoid infinite loops. Consider using conditional expressions with `if: github.actor != 'automation-user'` to prevent recursive execution.
+
+**Option 2: Use a GitHub App**
+
+Create a GitHub App and use its authentication token instead of `GITHUB_TOKEN`. This is the recommended approach for organizations as it provides better security, auditability, and granular permissions:
+
+```yaml wrap
+# In your workflow frontmatter
+env:
+  GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+
+steps:
+  - name: Generate token
+    id: generate-token
+    uses: actions/create-github-app-token@v1
+    with:
+      app-id: ${{ secrets.APP_ID }}
+      private-key: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+The GitHub App must have **Contents** (read and write) and **Pull requests** (read and write) permissions. PRs created with the app's token will trigger CI workflows and be attributed to the app.
+
+> [!TIP]
+> GitHub Apps provide better security than PATs because they have repository-scoped permissions, automatic token expiration, and don't require a user account. They're ideal for organization-wide automation.
+
+**Option 3: Use workflow_run trigger**
+
+Configure your CI workflows to run on `workflow_run` events, which allows them to react to completed workflows:
+
+```yaml wrap
+on:
+  workflow_run:
+    workflows: ["Create Pull Request Workflow"]
+    types: [completed]
+```
+
+This approach maintains security while allowing CI to run after PR creation. See [GitHub Actions workflow_run documentation](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#workflow_run) for details.
+
+**Recommendation:**
+
+For organizations, **Option 2 (GitHub App)** provides the best security and auditability. For individual users or smaller teams, **Option 1 (PAT with a service account)** is simpler to set up. In both cases, ensure proper safeguards are in place to prevent recursive workflow execution.
+
 ## Workflow Design
 
 ### Should I focus on one workflow, or write many different ones?
