@@ -437,7 +437,8 @@ func (c *Compiler) extractAdditionalConfigurations(
 	workflowData.Roles = c.extractRoles(frontmatter)
 	workflowData.Bots = c.extractBots(frontmatter)
 	workflowData.RateLimit = c.extractRateLimitConfig(frontmatter)
-	workflowData.SkipRoles = c.extractSkipRoles(frontmatter)
+	workflowData.SkipRoles = c.mergeSkipRoles(c.extractSkipRoles(frontmatter), importsResult.MergedSkipRoles)
+	workflowData.SkipBots = c.mergeSkipBots(c.extractSkipBots(frontmatter), importsResult.MergedSkipBots)
 
 	// Use the already extracted output configuration
 	workflowData.SafeOutputs = safeOutputs
