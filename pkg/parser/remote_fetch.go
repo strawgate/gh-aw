@@ -12,6 +12,7 @@ import (
 
 	"github.com/cli/go-gh/v2"
 	"github.com/cli/go-gh/v2/pkg/api"
+	"github.com/github/gh-aw/pkg/constants"
 	"github.com/github/gh-aw/pkg/gitutil"
 	"github.com/github/gh-aw/pkg/logger"
 )
@@ -597,9 +598,6 @@ func downloadFileFromGitHub(owner, repo, path, ref string) ([]byte, error) {
 	return downloadFileFromGitHubWithDepth(owner, repo, path, ref, 0)
 }
 
-// maxSymlinkDepth limits recursive symlink resolution to prevent infinite loops
-const maxSymlinkDepth = 5
-
 func downloadFileFromGitHubWithDepth(owner, repo, path, ref string, symlinkDepth int) ([]byte, error) {
 	// Create REST client
 	client, err := api.DefaultRESTClient()
@@ -632,7 +630,7 @@ func downloadFileFromGitHubWithDepth(owner, repo, path, ref string, symlinkDepth
 		}
 
 		// Check if this is a 404 — the path may traverse a symlink that the API doesn't follow
-		if isNotFoundError(errStr) && symlinkDepth < maxSymlinkDepth {
+		if isNotFoundError(errStr) && symlinkDepth < constants.MaxSymlinkDepth {
 			remoteLog.Printf("File not found at %s/%s/%s@%s, checking for symlinks in path (depth: %d)", owner, repo, path, ref, symlinkDepth)
 			resolvedPath, resolveErr := resolveRemoteSymlinks(owner, repo, path, ref)
 			if resolveErr == nil && resolvedPath != path {

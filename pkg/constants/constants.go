@@ -870,6 +870,12 @@ func GetWorkflowDir() string {
 	return filepath.Join(".github", "workflows")
 }
 
+// MaxSymlinkDepth limits recursive symlink resolution when fetching remote files.
+// The GitHub Contents API doesn't follow symlinks in path components, so gh-aw
+// resolves them manually. This constant caps recursion to prevent infinite loops
+// when symlinks chain to each other.
+const MaxSymlinkDepth = 5
+
 // DefaultAllowedMemoryExtensions is the default list of allowed file extensions for cache-memory and repo-memory storage.
 // An empty slice means all file extensions are allowed. When this is empty, the validation step is not emitted.
 var DefaultAllowedMemoryExtensions = []string{}
