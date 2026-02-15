@@ -83,13 +83,54 @@ func ProcessImportsFromFrontmatter(frontmatter map[string]any, baseDir string) (
 	return result.MergedTools, result.MergedEngines, nil
 }
 
+// remoteImportOrigin tracks the remote repository context for an imported file.
+// When a file is fetched from a remote GitHub repository via workflowspec,
+// its nested relative imports must be resolved against the same remote repo.
+type remoteImportOrigin struct {
+	Owner string // Repository owner (e.g., "elastic")
+	Repo  string // Repository name (e.g., "ai-github-actions")
+	Ref   string // Git ref - branch, tag, or SHA (e.g., "main", "v1.0.0", "abc123...")
+}
+
 // importQueueItem represents a file to be imported with its context
 type importQueueItem struct {
-	importPath  string         // Original import path (e.g., "file.md" or "file.md#Section")
-	fullPath    string         // Resolved absolute file path
-	sectionName string         // Optional section name (from file.md#Section syntax)
-	baseDir     string         // Base directory for resolving nested imports
-	inputs      map[string]any // Optional input values from parent import
+	importPath   string              // Original import path (e.g., "file.md" or "file.md#Section")
+	fullPath     string              // Resolved absolute file path
+	sectionName  string              // Optional section name (from file.md#Section syntax)
+	baseDir      string              // Base directory for resolving nested imports
+	inputs       map[string]any      // Optional input values from parent import
+	remoteOrigin *remoteImportOrigin // Remote origin context (non-nil when imported from a remote repo)
+}
+
+// parseRemoteOrigin extracts the remote origin (owner, repo, ref) from a workflowspec path.
+// Returns nil if the path is not a valid workflowspec.
+// Format: owner/repo/path[@ref] where ref defaults to "main" if not specified.
+func parseRemoteOrigin(spec string) *remoteImportOrigin {
+	// Remove section reference if present
+	cleanSpec := spec
+	if idx := strings.Index(spec, "#"); idx != -1 {
+		cleanSpec = spec[:idx]
+	}
+
+	// Split on @ to get path and ref
+	parts := strings.SplitN(cleanSpec, "@", 2)
+	pathPart := parts[0]
+	ref := "main"
+	if len(parts) == 2 {
+		ref = parts[1]
+	}
+
+	// Parse path: owner/repo/path/to/file.md
+	slashParts := strings.Split(pathPart, "/")
+	if len(slashParts) < 3 {
+		return nil
+	}
+
+	return &remoteImportOrigin{
+		Owner: slashParts[0],
+		Repo:  slashParts[1],
+		Ref:   ref,
+	}
 }
 
 // ProcessImportsFromFrontmatterWithManifest processes imports field from frontmatter
@@ -253,15 +294,26 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 			return nil, fmt.Errorf("cannot import .lock.yml files: '%s'. Lock files are compiled outputs from gh-aw. Import the source .md file instead", importPath)
 		}
 
+		// Track remote origin for workflowspec imports so nested relative imports
+		// can be resolved against the same remote repository
+		var origin *remoteImportOrigin
+		if isWorkflowSpec(filePath) {
+			origin = parseRemoteOrigin(filePath)
+			if origin != nil {
+				importLog.Printf("Tracking remote origin for workflowspec: %s/%s@%s", origin.Owner, origin.Repo, origin.Ref)
+			}
+		}
+
 		// Check for duplicates before adding to queue
 		if !visited[fullPath] {
 			visited[fullPath] = true
 			queue = append(queue, importQueueItem{
-				importPath:  importPath,
-				fullPath:    fullPath,
-				sectionName: sectionName,
-				baseDir:     baseDir,
-				inputs:      importSpec.Inputs,
+				importPath:   importPath,
+				fullPath:     fullPath,
+				sectionName:  sectionName,
+				baseDir:      baseDir,
+				inputs:       importSpec.Inputs,
+				remoteOrigin: origin,
 			})
 			log.Printf("Queued import: %s (resolved to %s)", importPath, fullPath)
 		} else {
@@ -415,8 +467,8 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 				}
 
 				// Add nested imports to queue (BFS: append to end)
-				// Use the original baseDir for resolving nested imports, not the nested file's directory
-				// This ensures that all imports are resolved relative to the workflows directory
+				// For local imports: resolve relative to the workflows directory (baseDir)
+				// For remote imports: resolve relative to .github/workflows/ in the remote repo
 				for _, nestedImportPath := range nestedImports {
 					// Handle section references
 					var nestedFilePath, nestedSectionName string
@@ -428,8 +480,25 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 						nestedFilePath = nestedImportPath
 					}
 
-					// Resolve nested import path relative to the workflows directory, not the nested file's directory
-					nestedFullPath, err := ResolveIncludePath(nestedFilePath, baseDir, cache)
+					// Determine the resolution path and propagate remote origin context
+					resolvedPath := nestedFilePath
+					var nestedRemoteOrigin *remoteImportOrigin
+
+					if item.remoteOrigin != nil && !isWorkflowSpec(nestedFilePath) {
+						// Parent was fetched from a remote repo and nested path is relative.
+						// Convert to a workflowspec that resolves against the remote repo's
+						// .github/workflows/ directory (mirrors local compilation behavior).
+						cleanPath := strings.TrimPrefix(nestedFilePath, "./")
+						resolvedPath = fmt.Sprintf("%s/%s/.github/workflows/%s@%s",
+							item.remoteOrigin.Owner, item.remoteOrigin.Repo, cleanPath, item.remoteOrigin.Ref)
+						nestedRemoteOrigin = item.remoteOrigin
+						importLog.Printf("Resolving nested import as remote workflowspec: %s -> %s", nestedFilePath, resolvedPath)
+					} else if isWorkflowSpec(nestedFilePath) {
+						// Nested import is itself a workflowspec - parse its remote origin
+						nestedRemoteOrigin = parseRemoteOrigin(nestedFilePath)
+					}
+
+					nestedFullPath, err := ResolveIncludePath(resolvedPath, baseDir, cache)
 					if err != nil {
 						// If we have source information for the parent workflow, create a structured error
 						if workflowFilePath != "" && yamlContent != "" {
@@ -453,10 +522,11 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 					if !visited[nestedFullPath] {
 						visited[nestedFullPath] = true
 						queue = append(queue, importQueueItem{
-							importPath:  nestedImportPath,
-							fullPath:    nestedFullPath,
-							sectionName: nestedSectionName,
-							baseDir:     baseDir, // Use original baseDir, not nestedBaseDir
+							importPath:   nestedImportPath,
+							fullPath:     nestedFullPath,
+							sectionName:  nestedSectionName,
+							baseDir:      baseDir, // Use original baseDir, not nestedBaseDir
+							remoteOrigin: nestedRemoteOrigin,
 						})
 						log.Printf("Discovered nested import: %s -> %s (queued)", item.fullPath, nestedFullPath)
 					} else {
