@@ -14,6 +14,9 @@ const mockGithub = {
     pulls: {
       createReview: vi.fn(),
     },
+    users: {
+      getAuthenticated: vi.fn(),
+    },
   },
 };
 
@@ -455,6 +458,166 @@ describe("pr_review_buffer (factory pattern)", () => {
       const callArgs = mockGithub.rest.pulls.createReview.mock.calls[0][0];
       // Footer should still be added to track which workflow submitted the review
       expect(callArgs.body).toContain("test-workflow");
+    });
+
+    it("should force COMMENT when reviewer is the PR author and event is APPROVE", async () => {
+      buffer.addComment({ path: "test.js", line: 1, body: "comment" });
+      buffer.setReviewMetadata("LGTM", "APPROVE");
+      buffer.setReviewContext({
+        repo: "owner/repo",
+        repoParts: { owner: "owner", repo: "repo" },
+        pullRequestNumber: 42,
+        pullRequest: { head: { sha: "abc123" }, user: { login: "bot-user" } },
+      });
+
+      mockGithub.rest.users.getAuthenticated.mockResolvedValue({
+        data: { login: "bot-user" },
+      });
+      mockGithub.rest.pulls.createReview.mockResolvedValue({
+        data: {
+          id: 700,
+          html_url: "https://github.com/owner/repo/pull/42#pullrequestreview-700",
+        },
+      });
+
+      const result = await buffer.submitReview();
+
+      expect(result.success).toBe(true);
+      expect(result.event).toBe("COMMENT");
+      const callArgs = mockGithub.rest.pulls.createReview.mock.calls[0][0];
+      expect(callArgs.event).toBe("COMMENT");
+      expect(mockCore.warning).toHaveBeenCalledWith(expect.stringContaining("Cannot submit APPROVE review on own PR"));
+    });
+
+    it("should force COMMENT when reviewer is the PR author and event is REQUEST_CHANGES", async () => {
+      buffer.addComment({ path: "test.js", line: 1, body: "comment" });
+      buffer.setReviewMetadata("Fix this", "REQUEST_CHANGES");
+      buffer.setReviewContext({
+        repo: "owner/repo",
+        repoParts: { owner: "owner", repo: "repo" },
+        pullRequestNumber: 42,
+        pullRequest: { head: { sha: "abc123" }, user: { login: "bot-user" } },
+      });
+
+      mockGithub.rest.users.getAuthenticated.mockResolvedValue({
+        data: { login: "bot-user" },
+      });
+      mockGithub.rest.pulls.createReview.mockResolvedValue({
+        data: {
+          id: 701,
+          html_url: "https://github.com/owner/repo/pull/42#pullrequestreview-701",
+        },
+      });
+
+      const result = await buffer.submitReview();
+
+      expect(result.success).toBe(true);
+      expect(result.event).toBe("COMMENT");
+      const callArgs = mockGithub.rest.pulls.createReview.mock.calls[0][0];
+      expect(callArgs.event).toBe("COMMENT");
+      expect(mockCore.warning).toHaveBeenCalledWith(expect.stringContaining("Cannot submit REQUEST_CHANGES review on own PR"));
+    });
+
+    it("should not force COMMENT when reviewer is different from PR author", async () => {
+      buffer.addComment({ path: "test.js", line: 1, body: "comment" });
+      buffer.setReviewMetadata("LGTM", "APPROVE");
+      buffer.setReviewContext({
+        repo: "owner/repo",
+        repoParts: { owner: "owner", repo: "repo" },
+        pullRequestNumber: 42,
+        pullRequest: { head: { sha: "abc123" }, user: { login: "pr-author" } },
+      });
+
+      mockGithub.rest.users.getAuthenticated.mockResolvedValue({
+        data: { login: "reviewer-bot" },
+      });
+      mockGithub.rest.pulls.createReview.mockResolvedValue({
+        data: {
+          id: 702,
+          html_url: "https://github.com/owner/repo/pull/42#pullrequestreview-702",
+        },
+      });
+
+      const result = await buffer.submitReview();
+
+      expect(result.success).toBe(true);
+      expect(result.event).toBe("APPROVE");
+      const callArgs = mockGithub.rest.pulls.createReview.mock.calls[0][0];
+      expect(callArgs.event).toBe("APPROVE");
+    });
+
+    it("should skip author check when event is already COMMENT", async () => {
+      buffer.addComment({ path: "test.js", line: 1, body: "comment" });
+      buffer.setReviewMetadata("Some feedback", "COMMENT");
+      buffer.setReviewContext({
+        repo: "owner/repo",
+        repoParts: { owner: "owner", repo: "repo" },
+        pullRequestNumber: 42,
+        pullRequest: { head: { sha: "abc123" }, user: { login: "bot-user" } },
+      });
+
+      mockGithub.rest.pulls.createReview.mockResolvedValue({
+        data: {
+          id: 703,
+          html_url: "https://github.com/owner/repo/pull/42#pullrequestreview-703",
+        },
+      });
+
+      const result = await buffer.submitReview();
+
+      expect(result.success).toBe(true);
+      // Should not call getAuthenticated since event is already COMMENT
+      expect(mockGithub.rest.users.getAuthenticated).not.toHaveBeenCalled();
+    });
+
+    it("should skip author check when pullRequest has no user info", async () => {
+      buffer.addComment({ path: "test.js", line: 1, body: "comment" });
+      buffer.setReviewMetadata("LGTM", "APPROVE");
+      buffer.setReviewContext({
+        repo: "owner/repo",
+        repoParts: { owner: "owner", repo: "repo" },
+        pullRequestNumber: 42,
+        pullRequest: { head: { sha: "abc123" } }, // No user field
+      });
+
+      mockGithub.rest.pulls.createReview.mockResolvedValue({
+        data: {
+          id: 705,
+          html_url: "https://github.com/owner/repo/pull/42#pullrequestreview-705",
+        },
+      });
+
+      const result = await buffer.submitReview();
+
+      expect(result.success).toBe(true);
+      expect(result.event).toBe("APPROVE");
+      // Should not call getAuthenticated since there's no user info to compare against
+      expect(mockGithub.rest.users.getAuthenticated).not.toHaveBeenCalled();
+    });
+
+    it("should proceed with original event when getAuthenticated fails", async () => {
+      buffer.addComment({ path: "test.js", line: 1, body: "comment" });
+      buffer.setReviewMetadata("LGTM", "APPROVE");
+      buffer.setReviewContext({
+        repo: "owner/repo",
+        repoParts: { owner: "owner", repo: "repo" },
+        pullRequestNumber: 42,
+        pullRequest: { head: { sha: "abc123" }, user: { login: "pr-author" } },
+      });
+
+      mockGithub.rest.users.getAuthenticated.mockRejectedValue(new Error("Bad credentials"));
+      mockGithub.rest.pulls.createReview.mockResolvedValue({
+        data: {
+          id: 704,
+          html_url: "https://github.com/owner/repo/pull/42#pullrequestreview-704",
+        },
+      });
+
+      const result = await buffer.submitReview();
+
+      expect(result.success).toBe(true);
+      expect(result.event).toBe("APPROVE");
+      expect(mockCore.warning).toHaveBeenCalledWith(expect.stringContaining("Could not determine authenticated user"));
     });
 
     it("should handle API errors gracefully", async () => {
