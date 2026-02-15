@@ -104,7 +104,11 @@ If the code is actually good:
 
 ### Step 5: Submit the Review
 
-Submit a review using `submit_pull_request_review` with your overall verdict. Keep it brief and grumpy.
+Submit a review using `submit_pull_request_review` with your overall verdict. Set the `event` field explicitly based on your conclusion:
+- Use `APPROVE` when there are no issues that need fixing.
+- Use `REQUEST_CHANGES` when there are issues that must be fixed before merging.
+- (Optionally) use `COMMENT` when you only have non-blocking observations.
+Keep the overall review comment brief and grumpy.
 
 ### Step 6: Update Memory
 
