@@ -489,6 +489,27 @@ func (c *Compiler) extractSkipRoles(frontmatter map[string]any) []string {
 	return nil
 }
 
+// extractSkipBots extracts the 'skip-bots' field from the 'on:' section of frontmatter
+// Returns nil if skip-bots is not configured
+func (c *Compiler) extractSkipBots(frontmatter map[string]any) []string {
+	// Check the "on" section in frontmatter
+	onValue, exists := frontmatter["on"]
+	if !exists || onValue == nil {
+		return nil
+	}
+
+	// Handle different formats of the on: section
+	switch on := onValue.(type) {
+	case map[string]any:
+		// Complex object format - look for skip-bots
+		if skipBotsValue, exists := on["skip-bots"]; exists && skipBotsValue != nil {
+			return extractStringSliceField(skipBotsValue, "skip-bots")
+		}
+	}
+
+	return nil
+}
+
 // extractStringSliceField extracts a string slice from various input formats
 // Handles: string, []string, []any (with string elements)
 // Returns nil if the input is empty or invalid
@@ -524,4 +545,62 @@ func extractStringSliceField(value any, fieldName string) []string {
 	}
 	roleLog.Printf("No valid %s found or unsupported type: %T", fieldName, value)
 	return nil
+}
+
+// mergeSkipRoles merges top-level skip-roles with imported skip-roles (union)
+func (c *Compiler) mergeSkipRoles(topSkipRoles []string, importedSkipRoles []string) []string {
+	// Create a set for deduplication
+	rolesSet := make(map[string]bool)
+	var result []string
+
+	// Add top-level skip-roles first
+	for _, role := range topSkipRoles {
+		if !rolesSet[role] {
+			rolesSet[role] = true
+			result = append(result, role)
+		}
+	}
+
+	// Merge imported skip-roles
+	for _, role := range importedSkipRoles {
+		if !rolesSet[role] {
+			rolesSet[role] = true
+			result = append(result, role)
+		}
+	}
+
+	if len(result) > 0 {
+		roleLog.Printf("Merged skip-roles: %v (top=%d, imported=%d, total=%d)", result, len(topSkipRoles), len(importedSkipRoles), len(result))
+	}
+
+	return result
+}
+
+// mergeSkipBots merges top-level skip-bots with imported skip-bots (union)
+func (c *Compiler) mergeSkipBots(topSkipBots []string, importedSkipBots []string) []string {
+	// Create a set for deduplication
+	usersSet := make(map[string]bool)
+	var result []string
+
+	// Add top-level skip-bots first
+	for _, user := range topSkipBots {
+		if !usersSet[user] {
+			usersSet[user] = true
+			result = append(result, user)
+		}
+	}
+
+	// Merge imported skip-bots
+	for _, user := range importedSkipBots {
+		if !usersSet[user] {
+			usersSet[user] = true
+			result = append(result, user)
+		}
+	}
+
+	if len(result) > 0 {
+		roleLog.Printf("Merged skip-bots: %v (top=%d, imported=%d, total=%d)", result, len(topSkipBots), len(importedSkipBots), len(result))
+	}
+
+	return result
 }

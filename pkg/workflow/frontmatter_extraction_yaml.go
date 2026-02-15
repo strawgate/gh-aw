@@ -156,6 +156,7 @@ func (c *Compiler) commentOutProcessedFieldsInOnSection(yamlStr string, frontmat
 	inSkipIfMatch := false
 	inSkipIfNoMatch := false
 	inSkipRolesArray := false
+	inSkipBotsArray := false
 	currentSection := "" // Track which section we're in ("issues", "pull_request", "discussion", or "issue_comment")
 
 	for _, line := range lines {
@@ -230,6 +231,13 @@ func (c *Compiler) commentOutProcessedFieldsInOnSection(yamlStr string, frontmat
 			inSkipRolesArray = true
 		}
 
+		// Check if we're entering skip-bots array
+		if !inPullRequest && !inIssues && !inDiscussion && !inIssueComment && strings.HasPrefix(trimmedLine, "skip-bots:") {
+			// Check if this is an array (next line will be "- ")
+			// We'll set the flag and handle it on the next iteration
+			inSkipBotsArray = true
+		}
+
 		// Check if we're entering skip-if-match object
 		if !inPullRequest && !inIssues && !inDiscussion && !inIssueComment && !inSkipIfMatch {
 			// Check both uncommented and commented forms
@@ -296,6 +304,17 @@ func (c *Compiler) commentOutProcessedFieldsInOnSection(yamlStr string, frontmat
 			}
 		}
 
+		// Check if we're leaving the skip-bots array by encountering another top-level field
+		if inSkipBotsArray && strings.TrimSpace(line) != "" {
+			// Get the indentation of the current line
+			lineIndent := len(line) - len(strings.TrimLeft(line, " \t"))
+
+			// If this is a non-dash line at the same level as skip-bots (2 spaces), we're out of the array
+			if lineIndent == 2 && !strings.HasPrefix(trimmedLine, "-") && !strings.HasPrefix(trimmedLine, "skip-bots:") && !strings.HasPrefix(trimmedLine, "#") {
+				inSkipBotsArray = false
+			}
+		}
+
 		// Determine if we should comment out this line
 		shouldComment := false
 		var commentReason string
@@ -329,6 +348,13 @@ func (c *Compiler) commentOutProcessedFieldsInOnSection(yamlStr string, frontmat
 				// Comment out array items in skip-roles
 				shouldComment = true
 				commentReason = " # Skip-roles processed as role check in pre-activation job"
+			} else if strings.HasPrefix(trimmedLine, "skip-bots:") {
+				shouldComment = true
+				commentReason = " # Skip-bots processed as bot check in pre-activation job"
+			} else if inSkipBotsArray && strings.HasPrefix(trimmedLine, "-") {
+				// Comment out array items in skip-bots
+				shouldComment = true
+				commentReason = " # Skip-bots processed as bot check in pre-activation job"
 			} else if strings.HasPrefix(trimmedLine, "reaction:") {
 				shouldComment = true
 				commentReason = " # Reaction processed as activation job step"
