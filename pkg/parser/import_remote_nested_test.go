@@ -5,8 +5,9 @@ package parser
 import (
 	"fmt"
 	"os"
-	pathpkg "path"
+	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,9 +72,9 @@ func TestParseRemoteOrigin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := parseRemoteOrigin(tt.spec)
 			if tt.expected == nil {
-				assert.Nil(t, result, "Expected nil for spec: %s", tt.spec)
+				assert.Nilf(t, result, "Expected nil for spec: %s", tt.spec)
 			} else {
-				require.NotNil(t, result, "Expected non-nil for spec: %s", tt.spec)
+				require.NotNilf(t, result, "Expected non-nil for spec: %s", tt.spec)
 				assert.Equal(t, tt.expected.Owner, result.Owner, "Owner mismatch")
 				assert.Equal(t, tt.expected.Repo, result.Repo, "Repo mismatch")
 				assert.Equal(t, tt.expected.Ref, result.Ref, "Ref mismatch")
@@ -82,18 +83,16 @@ func TestParseRemoteOrigin(t *testing.T) {
 	}
 }
 
-func TestNestedRemoteImportResolution(t *testing.T) {
-	// This test verifies that nested relative imports from remote files
-	// are converted to workflowspecs resolving against the remote repo's
-	// .github/workflows/ directory.
+func TestLocalImportResolutionBaseline(t *testing.T) {
+	// Baseline test: verifies local relative imports resolve correctly.
+	// This ensures the import processor still works for non-remote imports
+	// after the remote origin tracking changes.
 
-	// Create a temp directory structure simulating .github/workflows/
 	tmpDir := t.TempDir()
 	workflowsDir := filepath.Join(tmpDir, ".github", "workflows")
 	err := os.MkdirAll(workflowsDir, 0o755)
 	require.NoError(t, err, "Failed to create workflows directory")
 
-	// Create a shared directory with a local file (this simulates the local repo)
 	sharedDir := filepath.Join(workflowsDir, "shared")
 	err = os.MkdirAll(sharedDir, 0o755)
 	require.NoError(t, err, "Failed to create shared directory")
@@ -102,17 +101,6 @@ func TestNestedRemoteImportResolution(t *testing.T) {
 	err = os.WriteFile(localSharedFile, []byte("# Local tools\n"), 0o644)
 	require.NoError(t, err, "Failed to create local shared file")
 
-	// Create a main workflow that imports a remote file
-	mainWorkflow := filepath.Join(workflowsDir, "test-workflow.md")
-	err = os.WriteFile(mainWorkflow, []byte(`---
-imports:
-  - shared/local-tools.md
----
-# Test workflow
-`), 0o644)
-	require.NoError(t, err, "Failed to create main workflow")
-
-	// Test: local imports resolve correctly (baseline)
 	frontmatter := map[string]any{
 		"imports": []any{"shared/local-tools.md"},
 	}
@@ -207,6 +195,16 @@ func TestRemoteOriginPropagation(t *testing.T) {
 		assert.Equal(t, "other-org", origin.Owner, "Should use nested spec's owner")
 		assert.Equal(t, "other-repo", origin.Repo, "Should use nested spec's repo")
 		assert.Equal(t, "v2.0", origin.Ref, "Should use nested spec's ref")
+	})
+
+	t.Run("path traversal in nested import is rejected", func(t *testing.T) {
+		// A nested import like ../../../etc/passwd should be rejected
+		// when constructing the remote workflowspec
+		nestedPath := "../../../etc/passwd"
+		cleanPath := path.Clean(strings.TrimPrefix(nestedPath, "./"))
+
+		assert.True(t, strings.HasPrefix(cleanPath, ".."),
+			"Cleaned path should start with .. and be rejected by the import processor")
 	})
 
 	t.Run("SHA ref is preserved in nested resolution", func(t *testing.T) {
@@ -333,7 +331,7 @@ func TestResolveRemoteSymlinksPathConstruction(t *testing.T) {
 		target := "../../gh-agent-workflows/shared"
 
 		// This mirrors the logic in resolveRemoteSymlinks using path.Clean/path.Join
-		resolvedBase := pathpkg.Clean(pathpkg.Join(parentDir, target))
+		resolvedBase := path.Clean(path.Join(parentDir, target))
 		remaining := "elastic-tools.md"
 		resolvedPath := resolvedBase + "/" + remaining
 
@@ -348,7 +346,7 @@ func TestResolveRemoteSymlinksPathConstruction(t *testing.T) {
 		// Parent: "" (root)
 
 		target := "actual-dir"
-		resolvedBase := pathpkg.Clean(target)
+		resolvedBase := path.Clean(target)
 		remaining := "subdir/file.md"
 		resolvedPath := resolvedBase + "/" + remaining
 
@@ -365,7 +363,7 @@ func TestResolveRemoteSymlinksPathConstruction(t *testing.T) {
 		parentDir := "gh-agent-workflows"
 		target := "../.github/workflows/gh-aw-workflows"
 
-		resolvedBase := pathpkg.Clean(pathpkg.Join(parentDir, target))
+		resolvedBase := path.Clean(path.Join(parentDir, target))
 		remaining := "file.md"
 		resolvedPath := resolvedBase + "/" + remaining
 

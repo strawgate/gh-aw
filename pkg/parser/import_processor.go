@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"sort"
 	"strings"
 
@@ -488,7 +489,13 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 						// Parent was fetched from a remote repo and nested path is relative.
 						// Convert to a workflowspec that resolves against the remote repo's
 						// .github/workflows/ directory (mirrors local compilation behavior).
-						cleanPath := strings.TrimPrefix(nestedFilePath, "./")
+						cleanPath := path.Clean(strings.TrimPrefix(nestedFilePath, "./"))
+
+						// Reject paths that escape .github/workflows/ (e.g., ../../../etc/passwd)
+						if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || path.IsAbs(cleanPath) {
+							return nil, fmt.Errorf("nested import '%s' from remote file '%s' escapes .github/workflows/ base directory", nestedFilePath, item.importPath)
+						}
+
 						resolvedPath = fmt.Sprintf("%s/%s/.github/workflows/%s@%s",
 							item.remoteOrigin.Owner, item.remoteOrigin.Repo, cleanPath, item.remoteOrigin.Ref)
 						nestedRemoteOrigin = item.remoteOrigin

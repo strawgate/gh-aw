@@ -2,6 +2,7 @@ package parser
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -479,21 +480,31 @@ func isNotFoundError(errMsg string) bool {
 
 // checkRemoteSymlink checks if a path in a remote GitHub repository is a symlink.
 // Returns the symlink target and true if it is a symlink, or empty string and false otherwise.
-func checkRemoteSymlink(owner, repo, dirPath, ref string) (string, bool, error) {
-	client, err := api.DefaultRESTClient()
+// A nil error with false means the path is not a symlink (e.g., it's a directory or file).
+func checkRemoteSymlink(client *api.RESTClient, owner, repo, dirPath, ref string) (string, bool, error) {
+	endpoint := fmt.Sprintf("repos/%s/%s/contents/%s?ref=%s", owner, repo, dirPath, ref)
+
+	// The Contents API returns a JSON object for files/symlinks but a JSON array for directories.
+	// Decode into json.RawMessage first to distinguish these cases without error-driven control flow.
+	var raw json.RawMessage
+	err := client.Get(endpoint, &raw)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to create REST client: %w", err)
+		return "", false, err
 	}
 
+	// If the response is an array, this is a directory listing — not a symlink
+	trimmed := strings.TrimSpace(string(raw))
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		return "", false, nil
+	}
+
+	// Parse the object response to check the type
 	var result struct {
 		Type   string `json:"type"`
 		Target string `json:"target"`
 	}
-
-	endpoint := fmt.Sprintf("repos/%s/%s/contents/%s?ref=%s", owner, repo, dirPath, ref)
-	err = client.Get(endpoint, &result)
-	if err != nil {
-		return "", false, err
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", false, fmt.Errorf("failed to parse contents response for %s: %w", dirPath, err)
 	}
 
 	if result.Type == "symlink" && result.Target != "" {
@@ -514,14 +525,23 @@ func resolveRemoteSymlinks(owner, repo, filePath, ref string) (string, error) {
 		return "", fmt.Errorf("no directory components to resolve in path: %s", filePath)
 	}
 
+	client, err := api.DefaultRESTClient()
+	if err != nil {
+		return "", fmt.Errorf("failed to create REST client: %w", err)
+	}
+
 	// Check each directory prefix (not including the final filename) to find symlinks
 	for i := 1; i < len(parts); i++ {
 		dirPath := strings.Join(parts[:i], "/")
 
-		target, isSymlink, err := checkRemoteSymlink(owner, repo, dirPath, ref)
+		target, isSymlink, err := checkRemoteSymlink(client, owner, repo, dirPath, ref)
 		if err != nil {
-			// Not a symlink or API error — skip and try the next component
-			continue
+			// Only ignore 404s (path component doesn't exist yet at this prefix level).
+			// Propagate real API failures (auth, rate limit, network) immediately.
+			if isNotFoundError(err.Error()) {
+				continue
+			}
+			return "", fmt.Errorf("failed to check path component %s for symlinks: %w", dirPath, err)
 		}
 
 		if isSymlink {
@@ -538,6 +558,11 @@ func resolveRemoteSymlinks(owner, repo, filePath, ref string) (string, error) {
 				resolvedBase = pathpkg.Clean(pathpkg.Join(parentDir, target))
 			} else {
 				resolvedBase = pathpkg.Clean(target)
+			}
+
+			// Validate the resolved base doesn't escape the repository root
+			if resolvedBase == "" || resolvedBase == "." || pathpkg.IsAbs(resolvedBase) || strings.HasPrefix(resolvedBase, "..") {
+				return "", fmt.Errorf("symlink target %q at %s resolves outside repository root: %s", target, dirPath, resolvedBase)
 			}
 
 			// Reconstruct the full path with the resolved symlink
