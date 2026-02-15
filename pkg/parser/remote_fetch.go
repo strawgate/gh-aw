@@ -483,18 +483,21 @@ func isNotFoundError(errMsg string) bool {
 // A nil error with false means the path is not a symlink (e.g., it's a directory or file).
 func checkRemoteSymlink(client *api.RESTClient, owner, repo, dirPath, ref string) (string, bool, error) {
 	endpoint := fmt.Sprintf("repos/%s/%s/contents/%s?ref=%s", owner, repo, dirPath, ref)
+	remoteLog.Printf("Checking if path component is symlink: %s/%s/%s@%s", owner, repo, dirPath, ref)
 
 	// The Contents API returns a JSON object for files/symlinks but a JSON array for directories.
 	// Decode into json.RawMessage first to distinguish these cases without error-driven control flow.
 	var raw json.RawMessage
 	err := client.Get(endpoint, &raw)
 	if err != nil {
+		remoteLog.Printf("Contents API error for %s: %v", dirPath, err)
 		return "", false, err
 	}
 
 	// If the response is an array, this is a directory listing — not a symlink
 	trimmed := strings.TrimSpace(string(raw))
 	if len(trimmed) > 0 && trimmed[0] == '[' {
+		remoteLog.Printf("Path component %s is a directory (not a symlink)", dirPath)
 		return "", false, nil
 	}
 
@@ -508,9 +511,11 @@ func checkRemoteSymlink(client *api.RESTClient, owner, repo, dirPath, ref string
 	}
 
 	if result.Type == "symlink" && result.Target != "" {
+		remoteLog.Printf("Path component %s is a symlink -> %s", dirPath, result.Target)
 		return result.Target, true, nil
 	}
 
+	remoteLog.Printf("Path component %s is type=%s (not a symlink)", dirPath, result.Type)
 	return "", false, nil
 }
 
@@ -524,6 +529,8 @@ func resolveRemoteSymlinks(owner, repo, filePath, ref string) (string, error) {
 	if len(parts) <= 1 {
 		return "", fmt.Errorf("no directory components to resolve in path: %s", filePath)
 	}
+
+	remoteLog.Printf("Attempting symlink resolution for %s/%s/%s@%s (%d path components)", owner, repo, filePath, ref, len(parts))
 
 	client, err := api.DefaultRESTClient()
 	if err != nil {
@@ -539,6 +546,7 @@ func resolveRemoteSymlinks(owner, repo, filePath, ref string) (string, error) {
 			// Only ignore 404s (path component doesn't exist yet at this prefix level).
 			// Propagate real API failures (auth, rate limit, network) immediately.
 			if isNotFoundError(err.Error()) {
+				remoteLog.Printf("Path component %s returned 404, skipping", dirPath)
 				continue
 			}
 			return "", fmt.Errorf("failed to check path component %s for symlinks: %w", dirPath, err)
@@ -553,6 +561,8 @@ func resolveRemoteSymlinks(owner, repo, filePath, ref string) (string, error) {
 				parentDir = strings.Join(parts[:i-1], "/")
 			}
 
+			remoteLog.Printf("Resolving symlink: component=%s target=%s parentDir=%s", dirPath, target, parentDir)
+
 			var resolvedBase string
 			if parentDir != "" {
 				resolvedBase = pathpkg.Clean(pathpkg.Join(parentDir, target))
@@ -560,8 +570,11 @@ func resolveRemoteSymlinks(owner, repo, filePath, ref string) (string, error) {
 				resolvedBase = pathpkg.Clean(target)
 			}
 
+			remoteLog.Printf("Resolved base after path.Clean: %s", resolvedBase)
+
 			// Validate the resolved base doesn't escape the repository root
 			if resolvedBase == "" || resolvedBase == "." || pathpkg.IsAbs(resolvedBase) || strings.HasPrefix(resolvedBase, "..") {
+				remoteLog.Printf("Rejecting resolved base %q (escapes repository root)", resolvedBase)
 				return "", fmt.Errorf("symlink target %q at %s resolves outside repository root: %s", target, dirPath, resolvedBase)
 			}
 
@@ -576,6 +589,7 @@ func resolveRemoteSymlinks(owner, repo, filePath, ref string) (string, error) {
 		}
 	}
 
+	remoteLog.Printf("No symlinks found after checking all %d directory components of %s", len(parts)-1, filePath)
 	return "", fmt.Errorf("no symlinks found in path: %s", filePath)
 }
 

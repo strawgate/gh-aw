@@ -503,6 +503,9 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 					} else if isWorkflowSpec(nestedFilePath) {
 						// Nested import is itself a workflowspec - parse its remote origin
 						nestedRemoteOrigin = parseRemoteOrigin(nestedFilePath)
+						if nestedRemoteOrigin != nil {
+							importLog.Printf("Nested workflowspec import detected: %s (origin: %s/%s@%s)", nestedFilePath, nestedRemoteOrigin.Owner, nestedRemoteOrigin.Repo, nestedRemoteOrigin.Ref)
+						}
 					}
 
 					nestedFullPath, err := ResolveIncludePath(resolvedPath, baseDir, cache)
