@@ -216,12 +216,12 @@ func TestRemoteOriginPropagation(t *testing.T) {
 		}
 		nestedPath := "shared/formatting.md"
 
-		expectedSpec := fmt.Sprintf("%s/%s/.github/workflows/%s@%s",
+		resolvedSpec := fmt.Sprintf("%s/%s/.github/workflows/%s@%s",
 			origin.Owner, origin.Repo, nestedPath, origin.Ref)
 
 		assert.Equal(t,
 			"elastic/ai-github-actions/.github/workflows/shared/formatting.md@"+sha,
-			expectedSpec,
+			resolvedSpec,
 			"SHA ref should be preserved for nested imports",
 		)
 	})
