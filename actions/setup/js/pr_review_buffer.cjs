@@ -7,6 +7,10 @@
  * Creates a buffer instance that collects PR review comments and review metadata
  * so they can be submitted as a single GitHub PR review via pulls.createReview().
  *
+ * Cross-repository validation: The review buffer receives pre-validated repository
+ * information from handlers like create_pr_review_comment.cjs which use
+ * validateTargetRepo/checkAllowedRepo before setting the review context.
+ *
  * Usage:
  *   const { createReviewBuffer } = require("./pr_review_buffer.cjs");
  *   const buffer = createReviewBuffer();
@@ -203,8 +207,24 @@ function createReviewBuffer() {
     }
 
     // Determine review event and body
-    const event = reviewMetadata ? reviewMetadata.event : "COMMENT";
+    let event = reviewMetadata ? reviewMetadata.event : "COMMENT";
     let body = reviewMetadata ? reviewMetadata.body : "";
+
+    // Force COMMENT when the reviewer is also the PR author.
+    // GitHub API rejects APPROVE and REQUEST_CHANGES on your own PRs.
+    if (event !== "COMMENT" && pullRequest?.user?.login) {
+      try {
+        const { data: authenticatedUser } = await github.rest.users.getAuthenticated();
+        if (authenticatedUser?.login === pullRequest.user.login) {
+          core.warning(`Cannot submit ${event} review on own PR (author: ${pullRequest.user.login}). Forcing event to COMMENT.`);
+          event = "COMMENT";
+        }
+      } catch (authError) {
+        // If we can't determine the authenticated user, proceed with the original event.
+        // The GitHub API will reject it if it's invalid, and the error will be caught below.
+        core.warning(`Could not determine authenticated user: ${getErrorMessage(authError)}. Proceeding with event=${event}.`);
+      }
+    }
 
     // Determine if we should add footer based on footer mode
     let shouldAddFooter = false;

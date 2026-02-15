@@ -11,6 +11,14 @@ const HANDLER_TYPE = "add_labels";
 const { validateLabels } = require("./safe_output_validator.cjs");
 const { getErrorMessage } = require("./error_helpers.cjs");
 const { resolveTargetRepoConfig, resolveAndValidateRepo } = require("./repo_helpers.cjs");
+const { tryEnforceArrayLimit } = require("./limit_enforcement_helpers.cjs");
+
+/**
+ * Maximum limits for label parameters to prevent resource exhaustion.
+ * These limits align with GitHub's API constraints and security best practices.
+ */
+/** @type {number} Maximum number of labels allowed per operation */
+const MAX_LABELS = 10;
 
 /**
  * Main handler factory for add_labels
@@ -87,6 +95,13 @@ async function main(config = {}) {
       const error = `No labels provided. Please provide at least one label from ${labelSource}`;
       core.info(error);
       return { success: false, error };
+    }
+
+    // Enforce max limits on labels before validation
+    const limitResult = tryEnforceArrayLimit(requestedLabels, MAX_LABELS, "labels");
+    if (!limitResult.success) {
+      core.warning(`Label limit exceeded: ${limitResult.error}`);
+      return { success: false, error: limitResult.error };
     }
 
     // Use validation helper to sanitize and validate labels

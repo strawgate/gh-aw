@@ -8,6 +8,7 @@ on:
     types: [labeled]
     names: ["smoke"]
   reaction: "eyes"
+  status-comment: true
 permissions:
   contents: read
   issues: read
@@ -24,6 +25,8 @@ safe-outputs:
     title-prefix: "[smoke-temporary-id] "
     max: 5
     group: true
+    labels: [ai-generated]
+    close-older-issues: true
   link-sub-issue:
     max: 3
   add-comment:

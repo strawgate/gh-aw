@@ -8,6 +8,7 @@ on:
     types: [labeled]
     names: ["smoke"]
   reaction: "eyes"
+  status-comment: true
 permissions:
   contents: read
   pull-requests: read
@@ -29,9 +30,11 @@ safe-outputs:
     create-pull-request:
       title-prefix: "[smoke-project] "
       if-no-changes: "warn"
-      expires: 1d
+      labels: [ai-generated]
+      expires: 2h
     create-issue:
       expires: 2h
+      labels: [ai-generated]
       group: true
       close-older-issues: true
     add-labels:

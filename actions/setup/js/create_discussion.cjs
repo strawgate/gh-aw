@@ -17,6 +17,14 @@ const { getErrorMessage } = require("./error_helpers.cjs");
 const { createExpirationLine, generateFooterWithExpiration } = require("./ephemerals.cjs");
 const { generateWorkflowIdMarker } = require("./generate_footer.cjs");
 const { sanitizeLabelContent } = require("./sanitize_label_content.cjs");
+const { tryEnforceArrayLimit } = require("./limit_enforcement_helpers.cjs");
+
+/**
+ * Maximum limits for discussion parameters to prevent resource exhaustion.
+ * These limits align with GitHub's API constraints and security best practices.
+ */
+/** @type {number} Maximum number of labels allowed per discussion */
+const MAX_LABELS = 10;
 
 /**
  * Fetch repository ID and discussion categories for a repository
@@ -482,6 +490,13 @@ async function main(config = {}) {
       .filter(Boolean)
       .map(label => (label.length > 64 ? label.substring(0, 64) : label))
       .filter((label, index, arr) => arr.indexOf(label) === index);
+
+    // Enforce max limits on labels before API calls
+    const limitResult = tryEnforceArrayLimit(discussionLabels, MAX_LABELS, "labels");
+    if (!limitResult.success) {
+      core.warning(`Discussion limit exceeded: ${limitResult.error}`);
+      return { success: false, error: limitResult.error };
+    }
 
     // Build title
     let title = item.title ? item.title.trim() : "";

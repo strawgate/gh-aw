@@ -38,6 +38,7 @@ const { renderTemplate } = require("./messages_core.cjs");
 const { createExpirationLine, addExpirationToFooter } = require("./ephemerals.cjs");
 const { MAX_SUB_ISSUES, getSubIssueCount } = require("./sub_issue_helpers.cjs");
 const { closeOlderIssues } = require("./close_older_issues.cjs");
+const { tryEnforceArrayLimit } = require("./limit_enforcement_helpers.cjs");
 const fs = require("fs");
 
 /**
@@ -52,6 +53,16 @@ const MAX_SUB_ISSUES_PER_PARENT = MAX_SUB_ISSUES;
 
 /** @type {number} Maximum number of parent issues to check when searching */
 const MAX_PARENT_ISSUES_TO_CHECK = 10;
+
+/**
+ * Maximum limits for issue parameters to prevent resource exhaustion.
+ * These limits align with GitHub's API constraints and security best practices.
+ */
+/** @type {number} Maximum number of labels allowed per issue */
+const MAX_LABELS = 10;
+
+/** @type {number} Maximum number of assignees allowed per issue */
+const MAX_ASSIGNEES = 5;
 
 /**
  * Searches for an existing parent issue that can accept more sub-issues
@@ -384,6 +395,19 @@ async function main(config = {}) {
     // Filter out "copilot" from assignees - it will be assigned separately using GraphQL
     // Copilot is not a valid GitHub user and must be assigned via the agent assignment API
     assignees = assignees.filter(assignee => assignee !== "copilot");
+
+    // Enforce max limits on labels and assignees before API calls
+    const labelsLimitResult = tryEnforceArrayLimit(labels, MAX_LABELS, "labels");
+    if (!labelsLimitResult.success) {
+      core.warning(`Issue limit exceeded: ${labelsLimitResult.error}`);
+      return { success: false, error: labelsLimitResult.error };
+    }
+
+    const assigneesLimitResult = tryEnforceArrayLimit(assignees, MAX_ASSIGNEES, "assignees");
+    if (!assigneesLimitResult.success) {
+      core.warning(`Issue limit exceeded: ${assigneesLimitResult.error}`);
+      return { success: false, error: assigneesLimitResult.error };
+    }
 
     let title = message.title?.trim() ?? "";
 

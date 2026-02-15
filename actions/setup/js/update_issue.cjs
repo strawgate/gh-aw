@@ -13,6 +13,17 @@ const { createUpdateHandlerFactory } = require("./update_handler_factory.cjs");
 const { updateBody } = require("./update_pr_description_helpers.cjs");
 const { loadTemporaryProjectMap, replaceTemporaryProjectReferences } = require("./temporary_id.cjs");
 const { sanitizeTitle } = require("./sanitize_title.cjs");
+const { tryEnforceArrayLimit } = require("./limit_enforcement_helpers.cjs");
+
+/**
+ * Maximum limits for issue update parameters to prevent resource exhaustion.
+ * These limits align with GitHub's API constraints and security best practices.
+ */
+/** @type {number} Maximum number of labels allowed per issue */
+const MAX_LABELS = 10;
+
+/** @type {number} Maximum number of assignees allowed per issue */
+const MAX_ASSIGNEES = 5;
 
 /**
  * Execute the issue update API call
@@ -142,6 +153,19 @@ function buildIssueUpdateData(item, config) {
   }
   if (item.milestone !== undefined) {
     updateData.milestone = item.milestone;
+  }
+
+  // Enforce max limits on labels and assignees before API calls
+  const labelsLimitResult = tryEnforceArrayLimit(updateData.labels, MAX_LABELS, "labels");
+  if (!labelsLimitResult.success) {
+    core.warning(`Issue update limit exceeded: ${labelsLimitResult.error}`);
+    return { success: false, error: labelsLimitResult.error };
+  }
+
+  const assigneesLimitResult = tryEnforceArrayLimit(updateData.assignees, MAX_ASSIGNEES, "assignees");
+  if (!assigneesLimitResult.success) {
+    core.warning(`Issue update limit exceeded: ${assigneesLimitResult.error}`);
+    return { success: false, error: assigneesLimitResult.error };
   }
 
   // Pass footer config to executeUpdate (default to true)

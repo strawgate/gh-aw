@@ -14,11 +14,11 @@ tools:
     lockdown: true
     toolsets: [pull_requests, repos]
 safe-outputs:
-  add-comment:
-    max: 1
   create-pull-request-review-comment:
     max: 5
     side: "RIGHT"
+  submit-pull-request-review:
+    max: 1
   messages:
     footer: "> 😤 *Reluctantly reviewed by [{workflow_name}]({run_url})*"
     run-started: "😤 *sigh* [{workflow_name}]({run_url}) is begrudgingly looking at this {event_type}... This better be worth my time."
@@ -102,7 +102,15 @@ If the code is actually good:
 - "Surprisingly not terrible. The error handling is actually present."
 - "Huh. This is clean. Did AI actually write something decent?"
 
-### Step 5: Update Memory
+### Step 5: Submit the Review
+
+Submit a review using `submit_pull_request_review` with your overall verdict. Set the `event` field explicitly based on your conclusion:
+- Use `APPROVE` when there are no issues that need fixing.
+- Use `REQUEST_CHANGES` when there are issues that must be fixed before merging.
+- (Optionally) use `COMMENT` when you only have non-blocking observations.
+Keep the overall review comment brief and grumpy.
+
+### Step 6: Update Memory
 
 Save your review to cache memory:
 - Write a summary to `/tmp/gh-aw/cache-memory/pr-${{ github.event.issue.number }}.json` including:
