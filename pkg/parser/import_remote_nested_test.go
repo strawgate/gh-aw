@@ -475,14 +475,23 @@ func TestRemoteOriginPropagation(t *testing.T) {
 		assert.Equal(t, "v2.0", origin.Ref, "Should use nested spec's ref")
 	})
 
-	t.Run("path traversal in nested import is rejected", func(t *testing.T) {
-		// A nested import like ../../../etc/passwd should be rejected
-		// when constructing the remote workflowspec
-		nestedPath := "../../../etc/passwd"
-		cleanPath := path.Clean(strings.TrimPrefix(nestedPath, "./"))
+	t.Run("path traversal escaping repo root produces invalid path", func(t *testing.T) {
+		// A nested import like ../../../etc/passwd from a shallow base path
+		// would resolve to a path starting with ".." after path.Clean,
+		// which the import processor detects and rejects.
+		origin := &remoteImportOrigin{
+			Owner:    "org",
+			Repo:     "repo",
+			Ref:      "main",
+			BasePath: "workflows",
+		}
+		resolvedSpec := resolveNested(origin, "../../../etc/passwd")
 
-		assert.True(t, strings.HasPrefix(cleanPath, ".."),
-			"Cleaned path should start with .. and be rejected by the import processor")
+		// The resolved spec contains ".." in the repo-relative path,
+		// which the import processor rejects as escaping the repo root.
+		repoRelative := strings.SplitN(strings.SplitN(resolvedSpec, "@", 2)[0], "/", 3)
+		assert.True(t, len(repoRelative) >= 3 && strings.HasPrefix(repoRelative[2], ".."),
+			"Path escaping repo root should produce repo-relative path starting with ..: got %s", resolvedSpec)
 	})
 
 	t.Run("SHA ref is preserved in nested resolution", func(t *testing.T) {

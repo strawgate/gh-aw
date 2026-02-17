@@ -573,16 +573,24 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 					if item.remoteOrigin != nil && !isWorkflowSpec(nestedFilePath) {
 						// Parent was fetched from a remote repo and nested path is relative.
 						// Convert to a workflowspec that resolves against the parent's base
-						// path in the remote repo. The base path is derived from the parent
-						// workflowspec (e.g., "gh-agent-workflows" or ".github/workflows").
-						cleanPath := path.Clean(strings.TrimPrefix(nestedFilePath, "./"))
+						// path (parent directory) in the remote repo. Relative paths including
+						// "../" traversals are supported via path.Clean in ResolveNestedImport.
 
-						// Reject paths that escape the base directory (e.g., ../../../etc/passwd)
-						if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || path.IsAbs(cleanPath) {
-							return nil, fmt.Errorf("nested import '%s' from remote file '%s' escapes base directory", nestedFilePath, item.importPath)
+						// Reject absolute paths
+						if path.IsAbs(nestedFilePath) {
+							return nil, fmt.Errorf("nested import '%s' from remote file '%s' uses absolute path", nestedFilePath, item.importPath)
 						}
 
 						resolvedPath = item.remoteOrigin.ResolveNestedImport(nestedFilePath)
+
+						// After resolving against the base path, reject paths that escape
+						// the repository root (resolved path starts with "../")
+						resolvedFile := strings.SplitN(resolvedPath, "@", 2)[0]          // strip @ref
+						repoRelative := strings.SplitN(resolvedFile, "/", 3)              // owner/repo/path
+						if len(repoRelative) >= 3 && strings.HasPrefix(repoRelative[2], "..") {
+							return nil, fmt.Errorf("nested import '%s' from remote file '%s' escapes repository root", nestedFilePath, item.importPath)
+						}
+
 						nestedRemoteOrigin = item.remoteOrigin
 						importLog.Printf("Resolving nested import as remote workflowspec: %s -> %s (basePath: %q)", nestedFilePath, resolvedPath, item.remoteOrigin.BasePath)
 					} else if isWorkflowSpec(nestedFilePath) {
