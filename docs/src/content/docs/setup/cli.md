@@ -139,11 +139,11 @@ Add workflows from The Agentics collection or other repositories to `.github/wor
 ```bash wrap
 gh aw add githubnext/agentics/ci-doctor           # Add single workflow
 gh aw add "githubnext/agentics/ci-*"             # Add multiple with wildcards
-gh aw add ci-doctor --dir shared --number 3      # Organize in subdirectories with copies
+gh aw add ci-doctor --dir shared                  # Organize in subdirectory
 gh aw add ci-doctor --create-pull-request        # Create PR instead of commit
 ```
 
-**Options:** `--dir`, `--number`, `--create-pull-request` (or `--pr`), `--no-gitattributes`
+**Options:** `--dir`, `--create-pull-request` (or `--pr`), `--no-gitattributes`
 
 #### `new`
 
@@ -233,13 +233,14 @@ Test workflows in temporary private repositories (default) or run directly in sp
 
 ```bash wrap
 gh aw trial githubnext/agentics/ci-doctor          # Test remote workflow
-gh aw trial ./workflow.md --use-local-secrets      # Test with local API keys
 gh aw trial ./workflow.md --logical-repo owner/repo # Act as different repo
 gh aw trial ./workflow.md --repo owner/repo        # Run directly in repository
 gh aw trial ./workflow.md --dry-run                # Preview without executing
 ```
 
-**Options:** `-e`, `--engine`, `--auto-merge-prs`, `--repeat`, `--delete-host-repo-after`, `--use-local-secrets`, `--logical-repo`, `--clone-repo`, `--trigger-context`, `--repo`, `--dry-run`
+**Options:** `-e`, `--engine`, `--auto-merge-prs`, `--repeat`, `--delete-host-repo-after`, `--logical-repo`, `--clone-repo`, `--trigger-context`, `--repo`, `--dry-run`
+
+**Secret Handling:** API keys required for the selected engine are automatically checked. If missing from the target repository, they are prompted for interactively and uploaded.
 
 #### `run`
 
@@ -249,12 +250,11 @@ Execute workflows immediately in GitHub Actions. Displays workflow URL for track
 gh aw run workflow                          # Run workflow
 gh aw run workflow1 workflow2               # Run multiple workflows
 gh aw run workflow --repeat 3               # Repeat 3 times
-gh aw run workflow --use-local-secrets      # Use local API keys
 gh aw run workflow --push                   # Auto-commit, push, and dispatch workflow
 gh aw run workflow --push --ref main        # Push to specific branch
 ```
 
-**Options:** `--repeat`, `--use-local-secrets`, `--push` (see [--push flag](#the---push-flag)), `--ref`
+**Options:** `--repeat`, `--push` (see [--push flag](#the---push-flag)), `--ref`, `--auto-merge-prs`, `--enable-if-needed`
 
 When `--push` is used, automatically recompiles outdated `.lock.yml` files, stages all transitive imports, and triggers workflow run after successful push. Without `--push`, warnings are displayed for missing or outdated lock files.
 
@@ -300,6 +300,15 @@ Download and analyze logs with tool usage, network patterns, errors, warnings. R
 gh aw logs workflow                        # Download logs for workflow
 gh aw logs -c 10 --start-date -1w         # Filter by count and date
 gh aw logs --ref main --parse --json      # With markdown/JSON output for branch
+```
+
+**Workflow name matching**: The logs command accepts both workflow IDs (kebab-case filename without `.md`, e.g., `ci-failure-doctor`) and display names (from frontmatter, e.g., `CI Failure Doctor`). Matching is case-insensitive for convenience:
+
+```bash wrap
+gh aw logs ci-failure-doctor               # Workflow ID
+gh aw logs CI-FAILURE-DOCTOR               # Case-insensitive ID
+gh aw logs "CI Failure Doctor"             # Display name
+gh aw logs "ci failure doctor"             # Case-insensitive display name
 ```
 
 **Options:** `-c`, `--count`, `-e`, `--engine`, `--start-date`, `--end-date`, `--ref`, `--parse`, `--json`, `--repo`

@@ -1,5 +1,4 @@
 ---
-bots: ["agentic-workflows-dev[bot]"]
 timeout-minutes: 5
 roles: all
 on:
@@ -9,14 +8,18 @@ on:
   issue_comment:
     types: [created]
     lock-for-agent: true
+  pull_request:
+    types: [opened]
+    forks: "*"
   skip-roles: [admin, maintainer, write, triage]
   skip-bots: [github-actions, copilot]
 rate-limit:
   max: 5
   window: 60
-engine:
-  id: copilot
-  model: gpt-5.1-codex-mini
+concurrency:
+  group: "gh-aw-${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}"
+  cancel-in-progress: false
+engine: codex
 tools:
   github:
     mode: local
@@ -34,8 +37,6 @@ safe-outputs:
     max: 5
     allowed-reasons: [spam]
   threat-detection: false
-imports:
-  - shared/mood.md
 ---
 # AI Moderator
 
@@ -45,6 +46,7 @@ You are an AI-powered moderation system that automatically detects spam, link sp
 
 1. Use the GitHub MCP server tools to fetch the original context (see github context), unsanitized content directly from GitHub API
 2. Do NOT use the pre-sanitized text from the activation job - fetch fresh content to analyze the original user input
+3. **For Pull Requests**: Use `pull_request_read` with method `get_diff` to fetch the PR diff and analyze the changes for spam patterns
 
 ## Detection Tasks
 
@@ -110,6 +112,17 @@ Based on your analysis:
      - Use the `hide-comment` safe output to hide the comment with reason 'spam'
      - Also add appropriate labels to the parent issue as described above
    - If the comment appears legitimate and on-topic, add the `ai-inspected` label to the parent issue
+
+3. **For Pull Requests** (when pull request number is present):
+   - Fetch the PR diff using `pull_request_read` with method `get_diff`
+   - Analyze the diff for spam patterns:
+     - Large amounts of promotional content or links in code comments
+     - Suspicious file additions (e.g., cryptocurrency miners, malware)
+     - Mass link injection across multiple files
+     - AI-generated code comments with promotional content
+   - If spam, link spam, or suspicious patterns are detected:
+     - Use the `add-labels` safe output to add appropriate labels (`spam`, `link-spam`, `ai-generated`)
+   - **If no warnings or issues are found** and the PR appears legitimate, use the `add-labels` safe output to add the `ai-inspected` label
 
 ## Important Guidelines
 

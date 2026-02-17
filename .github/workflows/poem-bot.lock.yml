@@ -28,7 +28,7 @@
 #     - shared/mood.md
 #     - shared/reporting.md
 #
-# frontmatter-hash: 5afe80dbd7da5dc945c40b6668421f13b52ca084765270871b150108fbd59780
+# frontmatter-hash: bea51591fd002f37dca347dc9f8a310ca504787ad90f32fe81ee688a380028f3
 
 name: "Poem Bot - A Creative Agentic Workflow"
 "on":
@@ -65,12 +65,12 @@ jobs:
       issues: write
       pull-requests: write
     outputs:
-      body: ${{ steps.compute-text.outputs.body }}
+      body: ${{ steps.sanitized.outputs.body }}
       comment_id: ""
       comment_repo: ""
       slash_command: ${{ needs.pre_activation.outputs.matched_command }}
-      text: ${{ steps.compute-text.outputs.text }}
-      title: ${{ steps.compute-text.outputs.title }}
+      text: ${{ steps.sanitized.outputs.text }}
+      title: ${{ steps.sanitized.outputs.title }}
     steps:
       - name: Checkout actions folder
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -82,6 +82,14 @@ jobs:
         uses: ./actions/setup
         with:
           destination: /opt/gh-aw/actions
+      - name: Checkout .github and .agents folders
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: |
+            .github
+            .agents
+          fetch-depth: 1
+          persist-credentials: false
       - name: Check workflow file timestamps
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
@@ -93,7 +101,7 @@ jobs:
             const { main } = require('/opt/gh-aw/actions/check_workflow_timestamp_api.cjs');
             await main();
       - name: Compute current body text
-        id: compute-text
+        id: sanitized
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
@@ -101,6 +109,181 @@ jobs:
             setupGlobals(core, github, context, exec, io);
             const { main } = require('/opt/gh-aw/actions/compute_text.cjs');
             await main();
+      - name: Create prompt with built-in context
+        env:
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+          GH_AW_GITHUB_ACTOR: ${{ github.actor }}
+          GH_AW_GITHUB_EVENT_COMMENT_ID: ${{ github.event.comment.id }}
+          GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER: ${{ github.event.discussion.number }}
+          GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME: ${{ github.event.inputs.poem_theme }}
+          GH_AW_GITHUB_EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_AW_GITHUB_RUN_ID: ${{ github.run_id }}
+          GH_AW_GITHUB_WORKSPACE: ${{ github.workspace }}
+          GH_AW_IS_PR_COMMENT: ${{ github.event.issue.pull_request && 'true' || '' }}
+          GH_AW_STEPS_SANITIZED_OUTPUTS_TEXT: ${{ steps.sanitized.outputs.text }}
+        run: |
+          bash /opt/gh-aw/actions/create_prompt_first.sh
+          cat << 'GH_AW_PROMPT_EOF' > "$GH_AW_PROMPT"
+          <system>
+          GH_AW_PROMPT_EOF
+          cat "/opt/gh-aw/prompts/xpia.md" >> "$GH_AW_PROMPT"
+          cat "/opt/gh-aw/prompts/temp_folder_prompt.md" >> "$GH_AW_PROMPT"
+          cat "/opt/gh-aw/prompts/markdown.md" >> "$GH_AW_PROMPT"
+          cat "/opt/gh-aw/prompts/cache_memory_prompt.md" >> "$GH_AW_PROMPT"
+          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
+          <safe-outputs>
+          <description>GitHub API Access Instructions</description>
+          <important>
+          The gh CLI is NOT authenticated. Do NOT use gh commands for GitHub operations.
+          </important>
+          <instructions>
+          To create or modify GitHub resources (issues, discussions, pull requests, etc.), you MUST call the appropriate safe output tool. Simply writing content will NOT work - the workflow requires actual tool calls.
+          
+          Temporary IDs: Some safe output tools support a temporary ID field (usually named temporary_id) so you can reference newly-created items elsewhere in the SAME agent output (for example, using #aw_abc1 in a later body). 
+          
+          **IMPORTANT - temporary_id format rules:**
+          - If you DON'T need to reference the item later, OMIT the temporary_id field entirely (it will be auto-generated if needed)
+          - If you DO need cross-references/chaining, you MUST match this EXACT validation regex: /^aw_[A-Za-z0-9]{3,8}$/i
+          - Format: aw_ prefix followed by 3 to 8 alphanumeric characters (A-Z, a-z, 0-9, case-insensitive)
+          - Valid alphanumeric characters: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
+          - INVALID examples: aw_ab (too short), aw_123456789 (too long), aw_test-id (contains hyphen), aw_id_123 (contains underscore)
+          - VALID examples: aw_abc, aw_abc1, aw_Test123, aw_A1B2C3D4, aw_12345678
+          - To generate valid IDs: use 3-8 random alphanumeric characters or omit the field to let the system auto-generate
+          
+          Do NOT invent other aw_* formats — downstream steps will reject them with validation errors matching against /^aw_[A-Za-z0-9]{3,8}$/i.
+          
+          Discover available tools from the safeoutputs MCP server.
+          
+          **Critical**: Tool calls write structured data that downstream jobs process. Without tool calls, follow-up actions will be skipped.
+          
+          **Note**: If you made no other safe output tool calls during this workflow execution, call the "noop" tool to provide a status message indicating completion or that no actions were needed.
+          </instructions>
+          </safe-outputs>
+          <github-context>
+          The following GitHub context information is available for this workflow:
+          {{#if __GH_AW_GITHUB_ACTOR__ }}
+          - **actor**: __GH_AW_GITHUB_ACTOR__
+          {{/if}}
+          {{#if __GH_AW_GITHUB_REPOSITORY__ }}
+          - **repository**: __GH_AW_GITHUB_REPOSITORY__
+          {{/if}}
+          {{#if __GH_AW_GITHUB_WORKSPACE__ }}
+          - **workspace**: __GH_AW_GITHUB_WORKSPACE__
+          {{/if}}
+          {{#if __GH_AW_GITHUB_EVENT_ISSUE_NUMBER__ }}
+          - **issue-number**: #__GH_AW_GITHUB_EVENT_ISSUE_NUMBER__
+          {{/if}}
+          {{#if __GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER__ }}
+          - **discussion-number**: #__GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER__
+          {{/if}}
+          {{#if __GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER__ }}
+          - **pull-request-number**: #__GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER__
+          {{/if}}
+          {{#if __GH_AW_GITHUB_EVENT_COMMENT_ID__ }}
+          - **comment-id**: __GH_AW_GITHUB_EVENT_COMMENT_ID__
+          {{/if}}
+          {{#if __GH_AW_GITHUB_RUN_ID__ }}
+          - **workflow-run-id**: __GH_AW_GITHUB_RUN_ID__
+          {{/if}}
+          </github-context>
+          
+          GH_AW_PROMPT_EOF
+          if [ "$GITHUB_EVENT_NAME" = "issue_comment" ] && [ -n "$GH_AW_IS_PR_COMMENT" ] || [ "$GITHUB_EVENT_NAME" = "pull_request_review_comment" ] || [ "$GITHUB_EVENT_NAME" = "pull_request_review" ]; then
+            cat "/opt/gh-aw/prompts/pr_context_prompt.md" >> "$GH_AW_PROMPT"
+          fi
+          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
+          </system>
+          GH_AW_PROMPT_EOF
+          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
+          {{#runtime-import .github/workflows/shared/mood.md}}
+          GH_AW_PROMPT_EOF
+          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
+          {{#runtime-import .github/workflows/shared/reporting.md}}
+          GH_AW_PROMPT_EOF
+          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
+          {{#runtime-import .github/workflows/poem-bot.md}}
+          GH_AW_PROMPT_EOF
+      - name: Interpolate variables and render templates
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_GITHUB_ACTOR: ${{ github.actor }}
+          GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME: ${{ github.event.inputs.poem_theme }}
+          GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_AW_STEPS_SANITIZED_OUTPUTS_TEXT: ${{ steps.sanitized.outputs.text }}
+        with:
+          script: |
+            const { setupGlobals } = require('/opt/gh-aw/actions/setup_globals.cjs');
+            setupGlobals(core, github, context, exec, io);
+            const { main } = require('/opt/gh-aw/actions/interpolate_prompt.cjs');
+            await main();
+      - name: Substitute placeholders
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_ALLOWED_EXTENSIONS: ''
+          GH_AW_CACHE_DESCRIPTION: ''
+          GH_AW_CACHE_DIR: '/tmp/gh-aw/cache-memory/'
+          GH_AW_GITHUB_ACTOR: ${{ github.actor }}
+          GH_AW_GITHUB_EVENT_COMMENT_ID: ${{ github.event.comment.id }}
+          GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER: ${{ github.event.discussion.number }}
+          GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME: ${{ github.event.inputs.poem_theme }}
+          GH_AW_GITHUB_EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_AW_GITHUB_RUN_ID: ${{ github.run_id }}
+          GH_AW_GITHUB_WORKSPACE: ${{ github.workspace }}
+          GH_AW_IS_PR_COMMENT: ${{ github.event.issue.pull_request && 'true' || '' }}
+          GH_AW_NEEDS_PRE_ACTIVATION_OUTPUTS_ACTIVATED: ${{ needs.pre_activation.outputs.activated }}
+          GH_AW_NEEDS_PRE_ACTIVATION_OUTPUTS_MATCHED_COMMAND: ${{ needs.pre_activation.outputs.matched_command }}
+          GH_AW_STEPS_SANITIZED_OUTPUTS_TEXT: ${{ steps.sanitized.outputs.text }}
+        with:
+          script: |
+            const { setupGlobals } = require('/opt/gh-aw/actions/setup_globals.cjs');
+            setupGlobals(core, github, context, exec, io);
+            
+            const substitutePlaceholders = require('/opt/gh-aw/actions/substitute_placeholders.cjs');
+            
+            // Call the substitution function
+            return await substitutePlaceholders({
+              file: process.env.GH_AW_PROMPT,
+              substitutions: {
+                GH_AW_ALLOWED_EXTENSIONS: process.env.GH_AW_ALLOWED_EXTENSIONS,
+                GH_AW_CACHE_DESCRIPTION: process.env.GH_AW_CACHE_DESCRIPTION,
+                GH_AW_CACHE_DIR: process.env.GH_AW_CACHE_DIR,
+                GH_AW_GITHUB_ACTOR: process.env.GH_AW_GITHUB_ACTOR,
+                GH_AW_GITHUB_EVENT_COMMENT_ID: process.env.GH_AW_GITHUB_EVENT_COMMENT_ID,
+                GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER: process.env.GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER,
+                GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME: process.env.GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME,
+                GH_AW_GITHUB_EVENT_ISSUE_NUMBER: process.env.GH_AW_GITHUB_EVENT_ISSUE_NUMBER,
+                GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER: process.env.GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER,
+                GH_AW_GITHUB_REPOSITORY: process.env.GH_AW_GITHUB_REPOSITORY,
+                GH_AW_GITHUB_RUN_ID: process.env.GH_AW_GITHUB_RUN_ID,
+                GH_AW_GITHUB_WORKSPACE: process.env.GH_AW_GITHUB_WORKSPACE,
+                GH_AW_IS_PR_COMMENT: process.env.GH_AW_IS_PR_COMMENT,
+                GH_AW_NEEDS_PRE_ACTIVATION_OUTPUTS_ACTIVATED: process.env.GH_AW_NEEDS_PRE_ACTIVATION_OUTPUTS_ACTIVATED,
+                GH_AW_NEEDS_PRE_ACTIVATION_OUTPUTS_MATCHED_COMMAND: process.env.GH_AW_NEEDS_PRE_ACTIVATION_OUTPUTS_MATCHED_COMMAND,
+                GH_AW_STEPS_SANITIZED_OUTPUTS_TEXT: process.env.GH_AW_STEPS_SANITIZED_OUTPUTS_TEXT
+              }
+            });
+      - name: Validate prompt placeholders
+        env:
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        run: bash /opt/gh-aw/actions/validate_prompt_placeholders.sh
+      - name: Print prompt
+        env:
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        run: bash /opt/gh-aw/actions/print_prompt_summary.sh
+      - name: Upload prompt artifact
+        if: success()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: prompt
+          path: /tmp/gh-aw/aw-prompts/prompt.txt
+          retention-days: 1
 
   agent:
     needs: activation
@@ -194,7 +377,6 @@ jobs:
               workflow_name: "Poem Bot - A Creative Agentic Workflow",
               experimental: false,
               supports_tools_allowlist: true,
-              supports_http_transport: true,
               run_id: context.runId,
               run_number: context.runNumber,
               run_attempt: process.env.GITHUB_RUN_ATTEMPT,
@@ -206,7 +388,7 @@ jobs:
               staged: true,
               allowed_domains: [],
               firewall_enabled: true,
-              awf_version: "v0.18.0",
+              awf_version: "v0.19.1",
               awmg_version: "v0.1.4",
               steps: {
                 firewall: "squid"
@@ -230,7 +412,7 @@ jobs:
       - name: Install GitHub Copilot CLI
         run: /opt/gh-aw/actions/install_copilot_cli.sh 0.0.410
       - name: Install awf binary
-        run: bash /opt/gh-aw/actions/install_awf_binary.sh v0.18.0
+        run: bash /opt/gh-aw/actions/install_awf_binary.sh v0.19.1
       - name: Determine automatic lockdown mode for GitHub MCP Server
         id: determine-automatic-lockdown
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
@@ -242,7 +424,7 @@ jobs:
             const determineAutomaticLockdown = require('/opt/gh-aw/actions/determine_automatic_lockdown.cjs');
             await determineAutomaticLockdown(github, context, core);
       - name: Download container images
-        run: bash /opt/gh-aw/actions/download_docker_images.sh ghcr.io/github/gh-aw-firewall/agent:0.18.0 ghcr.io/github/gh-aw-firewall/squid:0.18.0 ghcr.io/github/gh-aw-mcpg:v0.1.4 ghcr.io/github/github-mcp-server:v0.30.3 node:lts-alpine
+        run: bash /opt/gh-aw/actions/download_docker_images.sh ghcr.io/github/gh-aw-firewall/agent:0.19.1 ghcr.io/github/gh-aw-firewall/squid:0.19.1 ghcr.io/github/gh-aw-mcpg:v0.1.4 ghcr.io/github/github-mcp-server:v0.30.3 node:lts-alpine
       - name: Write Safe Outputs Config
         run: |
           mkdir -p /opt/gh-aw/safeoutputs
@@ -278,7 +460,7 @@ jobs:
                   },
                   "temporary_id": {
                     "description": "Unique temporary identifier for referencing this issue before it's created. Format: 'aw_' followed by 3 to 8 alphanumeric characters (e.g., 'aw_abc1', 'aw_Test123'). Use '#aw_ID' in body text to reference other issues by their temporary_id; these are replaced with actual issue numbers after creation.",
-                    "pattern": "^aw_[A-Za-z0-9]{4,8}$",
+                    "pattern": "^aw_[A-Za-z0-9]{3,8}$",
                     "type": "string"
                   },
                   "title": {
@@ -312,7 +494,7 @@ jobs:
               "name": "create_agent_session"
             },
             {
-              "description": "Create a GitHub discussion for announcements, Q\u0026A, reports, status updates, or community conversations. Use this for content that benefits from threaded replies, doesn't require task tracking, or serves as documentation. For actionable work items that need assignment and status tracking, use create_issue instead. CONSTRAINTS: Maximum 2 discussion(s) can be created. Title will be prefixed with \"[📜 POETRY] \". Discussions will be created in category \"general\".",
+              "description": "Create a GitHub discussion for announcements, Q\u0026A, reports, status updates, or community conversations. Use this for content that benefits from threaded replies, doesn't require task tracking, or serves as documentation. For actionable work items that need assignment and status tracking, use create_issue instead. CONSTRAINTS: Maximum 2 discussion(s) can be created. Title will be prefixed with \"[📜 POETRY] \". Discussions will be created in category \"audits\".",
               "inputSchema": {
                 "additionalProperties": false,
                 "properties": {
@@ -362,12 +544,12 @@ jobs:
               "name": "close_pull_request"
             },
             {
-              "description": "Add a comment to an existing GitHub issue, pull request, or discussion. Use this to provide feedback, answer questions, or add information to an existing conversation. For creating new items, use create_issue, create_discussion, or create_pull_request instead. IMPORTANT: Comments are subject to validation constraints enforced by the MCP server - maximum 65536 characters, 10 mentions (@username), and 50 links. Exceeding these limits will result in an immediate error with specific guidance. CONSTRAINTS: Maximum 3 comment(s) can be added. Target: *.",
+              "description": "Add a comment to an existing GitHub issue, pull request, or discussion. Use this to provide feedback, answer questions, or add information to an existing conversation. For creating new items, use create_issue, create_discussion, or create_pull_request instead. IMPORTANT: Comments are subject to validation constraints enforced by the MCP server - maximum 65536 characters for the complete comment (including footer which is added automatically), 10 mentions (@username), and 50 links. Exceeding these limits will result in an immediate error with specific guidance. CONSTRAINTS: Maximum 3 comment(s) can be added. Target: *.",
               "inputSchema": {
                 "additionalProperties": false,
                 "properties": {
                   "body": {
-                    "description": "The comment text in Markdown format. This is the 'body' field - do not use 'comment_body' or other variations. Provide helpful, relevant information that adds value to the conversation. CONSTRAINTS: Maximum 65536 characters, maximum 10 mentions (@username), maximum 50 links (http/https URLs). If these limits are exceeded, the tool call will fail with a detailed error message indicating which constraint was violated.",
+                    "description": "The comment text in Markdown format. This is the 'body' field - do not use 'comment_body' or other variations. Provide helpful, relevant information that adds value to the conversation. CONSTRAINTS: The complete comment (your body text + automatically added footer) must not exceed 65536 characters total. Maximum 10 mentions (@username), maximum 50 links (http/https URLs). A footer (~200-500 characters) is automatically appended with workflow attribution, so leave adequate space. If these limits are exceeded, the tool call will fail with a detailed error message indicating which constraint was violated.",
                     "type": "string"
                   },
                   "item_number": {
@@ -1054,167 +1236,11 @@ jobs:
           script: |
             const { generateWorkflowOverview } = require('/opt/gh-aw/actions/generate_workflow_overview.cjs');
             await generateWorkflowOverview(core);
-      - name: Create prompt with built-in context
-        env:
-          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
-          GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
-          GH_AW_GITHUB_ACTOR: ${{ github.actor }}
-          GH_AW_GITHUB_EVENT_COMMENT_ID: ${{ github.event.comment.id }}
-          GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER: ${{ github.event.discussion.number }}
-          GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME: ${{ github.event.inputs.poem_theme }}
-          GH_AW_GITHUB_EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
-          GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-          GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
-          GH_AW_GITHUB_RUN_ID: ${{ github.run_id }}
-          GH_AW_GITHUB_WORKSPACE: ${{ github.workspace }}
-          GH_AW_IS_PR_COMMENT: ${{ github.event.issue.pull_request && 'true' || '' }}
-          GH_AW_NEEDS_ACTIVATION_OUTPUTS_TEXT: ${{ needs.activation.outputs.text }}
-        run: |
-          bash /opt/gh-aw/actions/create_prompt_first.sh
-          cat << 'GH_AW_PROMPT_EOF' > "$GH_AW_PROMPT"
-          <system>
-          GH_AW_PROMPT_EOF
-          cat "/opt/gh-aw/prompts/xpia.md" >> "$GH_AW_PROMPT"
-          cat "/opt/gh-aw/prompts/temp_folder_prompt.md" >> "$GH_AW_PROMPT"
-          cat "/opt/gh-aw/prompts/markdown.md" >> "$GH_AW_PROMPT"
-          cat "/opt/gh-aw/prompts/cache_memory_prompt.md" >> "$GH_AW_PROMPT"
-          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
-          <safe-outputs>
-          <description>GitHub API Access Instructions</description>
-          <important>
-          The gh CLI is NOT authenticated. Do NOT use gh commands for GitHub operations.
-          </important>
-          <instructions>
-          To create or modify GitHub resources (issues, discussions, pull requests, etc.), you MUST call the appropriate safe output tool. Simply writing content will NOT work - the workflow requires actual tool calls.
-          
-          Temporary IDs: Some safe output tools support a temporary ID field (usually named temporary_id) so you can reference newly-created items elsewhere in the SAME agent output (for example, using #aw_abc1 in a later body). 
-          
-          **IMPORTANT - temporary_id format rules:**
-          - If you DON'T need to reference the item later, OMIT the temporary_id field entirely (it will be auto-generated if needed)
-          - If you DO need cross-references/chaining, you MUST match this EXACT validation regex: /^aw_[A-Za-z0-9]{3,8}$/i
-          - Format: aw_ prefix followed by 3 to 8 alphanumeric characters (A-Z, a-z, 0-9, case-insensitive)
-          - Valid alphanumeric characters: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
-          - INVALID examples: aw_ab (too short), aw_123456789 (too long), aw_test-id (contains hyphen), aw_id_123 (contains underscore)
-          - VALID examples: aw_abc, aw_abc1, aw_Test123, aw_A1B2C3D4, aw_12345678
-          - To generate valid IDs: use 3-8 random alphanumeric characters or omit the field to let the system auto-generate
-          
-          Do NOT invent other aw_* formats — downstream steps will reject them with validation errors matching against /^aw_[A-Za-z0-9]{3,8}$/i.
-          
-          Discover available tools from the safeoutputs MCP server.
-          
-          **Critical**: Tool calls write structured data that downstream jobs process. Without tool calls, follow-up actions will be skipped.
-          
-          **Note**: If you made no other safe output tool calls during this workflow execution, call the "noop" tool to provide a status message indicating completion or that no actions were needed.
-          </instructions>
-          </safe-outputs>
-          <github-context>
-          The following GitHub context information is available for this workflow:
-          {{#if __GH_AW_GITHUB_ACTOR__ }}
-          - **actor**: __GH_AW_GITHUB_ACTOR__
-          {{/if}}
-          {{#if __GH_AW_GITHUB_REPOSITORY__ }}
-          - **repository**: __GH_AW_GITHUB_REPOSITORY__
-          {{/if}}
-          {{#if __GH_AW_GITHUB_WORKSPACE__ }}
-          - **workspace**: __GH_AW_GITHUB_WORKSPACE__
-          {{/if}}
-          {{#if __GH_AW_GITHUB_EVENT_ISSUE_NUMBER__ }}
-          - **issue-number**: #__GH_AW_GITHUB_EVENT_ISSUE_NUMBER__
-          {{/if}}
-          {{#if __GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER__ }}
-          - **discussion-number**: #__GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER__
-          {{/if}}
-          {{#if __GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER__ }}
-          - **pull-request-number**: #__GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER__
-          {{/if}}
-          {{#if __GH_AW_GITHUB_EVENT_COMMENT_ID__ }}
-          - **comment-id**: __GH_AW_GITHUB_EVENT_COMMENT_ID__
-          {{/if}}
-          {{#if __GH_AW_GITHUB_RUN_ID__ }}
-          - **workflow-run-id**: __GH_AW_GITHUB_RUN_ID__
-          {{/if}}
-          </github-context>
-          
-          GH_AW_PROMPT_EOF
-          if [ "$GITHUB_EVENT_NAME" = "issue_comment" ] && [ -n "$GH_AW_IS_PR_COMMENT" ] || [ "$GITHUB_EVENT_NAME" = "pull_request_review_comment" ] || [ "$GITHUB_EVENT_NAME" = "pull_request_review" ]; then
-            cat "/opt/gh-aw/prompts/pr_context_prompt.md" >> "$GH_AW_PROMPT"
-          fi
-          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
-          </system>
-          GH_AW_PROMPT_EOF
-          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
-          {{#runtime-import .github/workflows/shared/mood.md}}
-          GH_AW_PROMPT_EOF
-          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
-          {{#runtime-import .github/workflows/shared/reporting.md}}
-          GH_AW_PROMPT_EOF
-          cat << 'GH_AW_PROMPT_EOF' >> "$GH_AW_PROMPT"
-          {{#runtime-import .github/workflows/poem-bot.md}}
-          GH_AW_PROMPT_EOF
-      - name: Substitute placeholders
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        env:
-          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
-          GH_AW_ALLOWED_EXTENSIONS: ''
-          GH_AW_CACHE_DESCRIPTION: ''
-          GH_AW_CACHE_DIR: '/tmp/gh-aw/cache-memory/'
-          GH_AW_GITHUB_ACTOR: ${{ github.actor }}
-          GH_AW_GITHUB_EVENT_COMMENT_ID: ${{ github.event.comment.id }}
-          GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER: ${{ github.event.discussion.number }}
-          GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME: ${{ github.event.inputs.poem_theme }}
-          GH_AW_GITHUB_EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
-          GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-          GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
-          GH_AW_GITHUB_RUN_ID: ${{ github.run_id }}
-          GH_AW_GITHUB_WORKSPACE: ${{ github.workspace }}
-          GH_AW_IS_PR_COMMENT: ${{ github.event.issue.pull_request && 'true' || '' }}
-          GH_AW_NEEDS_ACTIVATION_OUTPUTS_TEXT: ${{ needs.activation.outputs.text }}
+      - name: Download prompt artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          script: |
-            const substitutePlaceholders = require('/opt/gh-aw/actions/substitute_placeholders.cjs');
-            
-            // Call the substitution function
-            return await substitutePlaceholders({
-              file: process.env.GH_AW_PROMPT,
-              substitutions: {
-                GH_AW_ALLOWED_EXTENSIONS: process.env.GH_AW_ALLOWED_EXTENSIONS,
-                GH_AW_CACHE_DESCRIPTION: process.env.GH_AW_CACHE_DESCRIPTION,
-                GH_AW_CACHE_DIR: process.env.GH_AW_CACHE_DIR,
-                GH_AW_GITHUB_ACTOR: process.env.GH_AW_GITHUB_ACTOR,
-                GH_AW_GITHUB_EVENT_COMMENT_ID: process.env.GH_AW_GITHUB_EVENT_COMMENT_ID,
-                GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER: process.env.GH_AW_GITHUB_EVENT_DISCUSSION_NUMBER,
-                GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME: process.env.GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME,
-                GH_AW_GITHUB_EVENT_ISSUE_NUMBER: process.env.GH_AW_GITHUB_EVENT_ISSUE_NUMBER,
-                GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER: process.env.GH_AW_GITHUB_EVENT_PULL_REQUEST_NUMBER,
-                GH_AW_GITHUB_REPOSITORY: process.env.GH_AW_GITHUB_REPOSITORY,
-                GH_AW_GITHUB_RUN_ID: process.env.GH_AW_GITHUB_RUN_ID,
-                GH_AW_GITHUB_WORKSPACE: process.env.GH_AW_GITHUB_WORKSPACE,
-                GH_AW_IS_PR_COMMENT: process.env.GH_AW_IS_PR_COMMENT,
-                GH_AW_NEEDS_ACTIVATION_OUTPUTS_TEXT: process.env.GH_AW_NEEDS_ACTIVATION_OUTPUTS_TEXT
-              }
-            });
-      - name: Interpolate variables and render templates
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        env:
-          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
-          GH_AW_GITHUB_ACTOR: ${{ github.actor }}
-          GH_AW_GITHUB_EVENT_INPUTS_POEM_THEME: ${{ github.event.inputs.poem_theme }}
-          GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
-          GH_AW_NEEDS_ACTIVATION_OUTPUTS_TEXT: ${{ needs.activation.outputs.text }}
-        with:
-          script: |
-            const { setupGlobals } = require('/opt/gh-aw/actions/setup_globals.cjs');
-            setupGlobals(core, github, context, exec, io);
-            const { main } = require('/opt/gh-aw/actions/interpolate_prompt.cjs');
-            await main();
-      - name: Validate prompt placeholders
-        env:
-          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
-        run: bash /opt/gh-aw/actions/validate_prompt_placeholders.sh
-      - name: Print prompt
-        env:
-          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
-        run: bash /opt/gh-aw/actions/print_prompt_summary.sh
+          name: prompt
+          path: /tmp/gh-aw/aw-prompts
       - name: Clean git credentials
         run: bash /opt/gh-aw/actions/clean_git_credentials.sh
       - name: Execute GitHub Copilot CLI
@@ -1247,7 +1273,7 @@ jobs:
         timeout-minutes: 10
         run: |
           set -o pipefail
-          sudo -E awf --env-all --container-workdir "${GITHUB_WORKSPACE}" --allow-domains api.business.githubcopilot.com,api.enterprise.githubcopilot.com,api.github.com,api.githubcopilot.com,api.individual.githubcopilot.com,github.com,host.docker.internal,raw.githubusercontent.com,registry.npmjs.org,telemetry.enterprise.githubcopilot.com --log-level info --proxy-logs-dir /tmp/gh-aw/sandbox/firewall/logs --enable-host-access --image-tag 0.18.0 --skip-pull \
+          sudo -E awf --env-all --container-workdir "${GITHUB_WORKSPACE}" --allow-domains api.business.githubcopilot.com,api.enterprise.githubcopilot.com,api.github.com,api.githubcopilot.com,api.individual.githubcopilot.com,github.com,host.docker.internal,raw.githubusercontent.com,registry.npmjs.org,telemetry.enterprise.githubcopilot.com --log-level info --proxy-logs-dir /tmp/gh-aw/sandbox/firewall/logs --enable-host-access --image-tag 0.19.1 --skip-pull \
             -- /bin/bash -c '/usr/local/bin/copilot --add-dir /tmp/gh-aw/ --log-level all --log-dir /tmp/gh-aw/sandbox/agent/logs/ --add-dir "${GITHUB_WORKSPACE}" --disable-builtin-mcps --model gpt-5 --allow-tool github --allow-tool safeoutputs --allow-tool '\''shell(cat)'\'' --allow-tool '\''shell(date)'\'' --allow-tool '\''shell(echo)'\'' --allow-tool '\''shell(git add:*)'\'' --allow-tool '\''shell(git branch:*)'\'' --allow-tool '\''shell(git checkout:*)'\'' --allow-tool '\''shell(git commit:*)'\'' --allow-tool '\''shell(git merge:*)'\'' --allow-tool '\''shell(git rm:*)'\'' --allow-tool '\''shell(git status)'\'' --allow-tool '\''shell(git switch:*)'\'' --allow-tool '\''shell(git)'\'' --allow-tool '\''shell(grep)'\'' --allow-tool '\''shell(head)'\'' --allow-tool '\''shell(ls)'\'' --allow-tool '\''shell(pwd)'\'' --allow-tool '\''shell(sort)'\'' --allow-tool '\''shell(tail)'\'' --allow-tool '\''shell(uniq)'\'' --allow-tool '\''shell(wc)'\'' --allow-tool '\''shell(yq)'\'' --allow-tool write --add-dir /tmp/gh-aw/cache-memory/ --allow-all-paths --share /tmp/gh-aw/sandbox/agent/logs/conversation.md --prompt "$(cat /tmp/gh-aw/aw-prompts/prompt.txt)"' 2>&1 | tee -a /tmp/gh-aw/agent-stdio.log
         env:
           COPILOT_AGENT_RUNNER_TYPE: STANDALONE
@@ -1318,7 +1344,7 @@ jobs:
           SECRET_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload Safe Outputs
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: safe-output
           path: ${{ env.GH_AW_SAFE_OUTPUTS }}
@@ -1341,13 +1367,13 @@ jobs:
             await main();
       - name: Upload sanitized agent output
         if: always() && env.GH_AW_AGENT_OUTPUT
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: agent-output
           path: ${{ env.GH_AW_AGENT_OUTPUT }}
           if-no-files-found: warn
       - name: Upload engine output files
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: agent_outputs
           path: |
@@ -1390,7 +1416,7 @@ jobs:
             echo 'AWF binary not installed, skipping firewall log summary'
           fi
       - name: Upload cache-memory data as artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: cache-memory
@@ -1399,7 +1425,7 @@ jobs:
       # Upload safe-outputs assets for upload_assets job
       - name: Upload safe-outputs assets
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: safe-outputs-assets
           path: /tmp/gh-aw/safeoutputs/assets/
@@ -1408,7 +1434,7 @@ jobs:
       - name: Upload agent artifacts
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: agent-artifacts
           path: |
@@ -1453,7 +1479,7 @@ jobs:
           destination: /opt/gh-aw/actions
       - name: Download agent output artifact
         continue-on-error: true
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: agent-output
           path: /tmp/gh-aw/safeoutputs/
@@ -1566,13 +1592,13 @@ jobs:
           destination: /opt/gh-aw/actions
       - name: Download agent artifacts
         continue-on-error: true
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: agent-artifacts
           path: /tmp/gh-aw/threat-detection/
       - name: Download agent output artifact
         continue-on-error: true
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: agent-output
           path: /tmp/gh-aw/threat-detection/
@@ -1643,7 +1669,7 @@ jobs:
             await main();
       - name: Upload threat detection log
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: threat-detection.log
           path: /tmp/gh-aw/threat-detection/detection.log
@@ -1750,7 +1776,7 @@ jobs:
           destination: /opt/gh-aw/actions
       - name: Download agent output artifact
         continue-on-error: true
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: agent-output
           path: /tmp/gh-aw/safeoutputs/
@@ -1761,7 +1787,7 @@ jobs:
           echo "GH_AW_AGENT_OUTPUT=/tmp/gh-aw/safeoutputs/agent_output.json" >> "$GITHUB_ENV"
       - name: Download patch artifact
         continue-on-error: true
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: agent-artifacts
           path: /tmp/gh-aw/
@@ -1790,7 +1816,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"add_comment\":{\"max\":3,\"target\":\"*\"},\"add_labels\":{\"allowed\":[\"poetry\",\"creative\",\"automation\",\"ai-generated\",\"epic\",\"haiku\",\"sonnet\",\"limerick\"],\"max\":5},\"close_pull_request\":{\"max\":2,\"required_labels\":[\"poetry\",\"automation\"],\"required_title_prefix\":\"[🎨 POETRY]\",\"target\":\"*\"},\"create_discussion\":{\"category\":\"general\",\"close_older_discussions\":true,\"expires\":168,\"fallback_to_issue\":true,\"labels\":[\"poetry\",\"automation\",\"ai-generated\"],\"max\":2,\"title_prefix\":\"[📜 POETRY] \"},\"create_issue\":{\"expires\":48,\"group\":true,\"labels\":[\"poetry\",\"automation\",\"ai-generated\"],\"max\":2,\"title_prefix\":\"[🎭 POEM-BOT] \"},\"create_pull_request\":{\"base_branch\":\"${{ github.ref_name }}\",\"draft\":false,\"expires\":48,\"labels\":[\"poetry\",\"automation\",\"creative-writing\"],\"max\":1,\"max_patch_size\":1024,\"title_prefix\":\"[🎨 POETRY] \"},\"create_pull_request_review_comment\":{\"max\":2,\"side\":\"RIGHT\"},\"link_sub_issue\":{\"max\":3,\"parent_required_labels\":[\"poetry\",\"epic\"],\"parent_title_prefix\":\"[🎭 POEM-BOT]\",\"sub_required_labels\":[\"poetry\"],\"sub_title_prefix\":\"[🎭 POEM-BOT]\"},\"missing_data\":{},\"missing_tool\":{},\"push_to_pull_request_branch\":{\"base_branch\":\"${{ github.ref_name }}\",\"if_no_changes\":\"warn\",\"max_patch_size\":1024},\"update_issue\":{\"allow_body\":true,\"allow_status\":true,\"allow_title\":true,\"max\":2,\"target\":\"*\"}}"
+          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"add_comment\":{\"max\":3,\"target\":\"*\"},\"add_labels\":{\"allowed\":[\"poetry\",\"creative\",\"automation\",\"ai-generated\",\"epic\",\"haiku\",\"sonnet\",\"limerick\"],\"max\":5},\"close_pull_request\":{\"max\":2,\"required_labels\":[\"poetry\",\"automation\"],\"required_title_prefix\":\"[🎨 POETRY]\",\"target\":\"*\"},\"create_discussion\":{\"category\":\"audits\",\"close_older_discussions\":true,\"expires\":168,\"fallback_to_issue\":true,\"labels\":[\"poetry\",\"automation\",\"ai-generated\"],\"max\":2,\"title_prefix\":\"[📜 POETRY] \"},\"create_issue\":{\"expires\":48,\"group\":true,\"labels\":[\"poetry\",\"automation\",\"ai-generated\"],\"max\":2,\"title_prefix\":\"[🎭 POEM-BOT] \"},\"create_pull_request\":{\"base_branch\":\"${{ github.ref_name }}\",\"draft\":false,\"expires\":48,\"labels\":[\"poetry\",\"automation\",\"creative-writing\"],\"max\":1,\"max_patch_size\":1024,\"reviewers\":[\"copilot\"],\"title_prefix\":\"[🎨 POETRY] \"},\"create_pull_request_review_comment\":{\"max\":2,\"side\":\"RIGHT\"},\"link_sub_issue\":{\"max\":3,\"parent_required_labels\":[\"poetry\",\"epic\"],\"parent_title_prefix\":\"[🎭 POEM-BOT]\",\"sub_required_labels\":[\"poetry\"],\"sub_title_prefix\":\"[🎭 POEM-BOT]\"},\"missing_data\":{},\"missing_tool\":{},\"push_to_pull_request_branch\":{\"base_branch\":\"${{ github.ref_name }}\",\"if_no_changes\":\"warn\",\"max_patch_size\":1024},\"update_issue\":{\"allow_body\":true,\"allow_status\":true,\"allow_title\":true,\"max\":2,\"target\":\"*\"}}"
           GH_AW_SAFE_OUTPUTS_STAGED: "true"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
@@ -1833,7 +1859,7 @@ jobs:
         with:
           destination: /opt/gh-aw/actions
       - name: Download cache-memory artifact (default)
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         continue-on-error: true
         with:
           name: cache-memory
@@ -1885,7 +1911,7 @@ jobs:
           echo "Git configured with standard GitHub Actions identity"
       - name: Download assets
         continue-on-error: true
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: safe-outputs-assets
           path: /tmp/gh-aw/safeoutputs/assets/
@@ -1896,7 +1922,7 @@ jobs:
           find /tmp/gh-aw/safeoutputs/assets/ -maxdepth 1 -ls
       - name: Download agent output artifact
         continue-on-error: true
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: agent-output
           path: /tmp/gh-aw/safeoutputs/

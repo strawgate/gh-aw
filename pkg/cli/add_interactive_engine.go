@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/github/gh-aw/pkg/console"
 	"github.com/github/gh-aw/pkg/constants"
-	"github.com/github/gh-aw/pkg/parser"
 )
 
 // selectAIEngineAndKey prompts the user to select an AI engine and provide API key
@@ -19,40 +18,43 @@ func (c *AddInteractiveConfig) selectAIEngineAndKey() error {
 		return err
 	}
 
-	// Determine default engine based on workflow preference, existing secrets, then environment
+	// Determine default engine based on existing secrets, workflow preference, then environment
+	// Priority order: flag override > existing secrets > workflow frontmatter > environment > default
 	defaultEngine := string(constants.CopilotEngine)
-	existingSecretNote := ""
+	workflowSpecifiedEngine := ""
+
+	// Check if workflow specifies a preferred engine in frontmatter
+	if c.resolvedWorkflows != nil && len(c.resolvedWorkflows.Workflows) > 0 {
+		for _, wf := range c.resolvedWorkflows.Workflows {
+			if wf.Engine != "" {
+				workflowSpecifiedEngine = wf.Engine
+				addInteractiveLog.Printf("Workflow specifies engine in frontmatter: %s", wf.Engine)
+				break
+			}
+		}
+	}
 
 	// If engine is explicitly overridden via flag, use that
 	if c.EngineOverride != "" {
 		defaultEngine = c.EngineOverride
 	} else {
-		// Priority 0: Check if workflow specifies a preferred engine in frontmatter
-		if c.resolvedWorkflows != nil && len(c.resolvedWorkflows.Workflows) > 0 {
-			for _, wf := range c.resolvedWorkflows.Workflows {
-				if wf.Engine != "" {
-					defaultEngine = wf.Engine
-					addInteractiveLog.Printf("Using engine from workflow frontmatter: %s", wf.Engine)
-					break
-				}
-			}
-		}
-	}
-
-	// Only check secrets/environment if we haven't already set a preference
-	workflowHasPreference := c.resolvedWorkflows != nil && len(c.resolvedWorkflows.Workflows) > 0 && c.resolvedWorkflows.Workflows[0].Engine != ""
-	if c.EngineOverride == "" && !workflowHasPreference {
 		// Priority 1: Check existing repository secrets using EngineOptions
+		// This takes precedence over workflow preference since users should use what's already available
 		for _, opt := range constants.EngineOptions {
 			if c.existingSecrets[opt.SecretName] {
 				defaultEngine = opt.Value
-				existingSecretNote = fmt.Sprintf(" (existing %s secret will be used)", opt.SecretName)
+				addInteractiveLog.Printf("Found existing secret %s, recommending engine: %s", opt.SecretName, opt.Value)
 				break
 			}
 		}
 
-		// Priority 2: Check environment variables if no existing secret found
-		if existingSecretNote == "" {
+		// Priority 2: If no existing secret found, use workflow frontmatter preference
+		if defaultEngine == string(constants.CopilotEngine) && workflowSpecifiedEngine != "" {
+			defaultEngine = workflowSpecifiedEngine
+		}
+
+		// Priority 3: Check environment variables if no existing secret or workflow preference found
+		if defaultEngine == string(constants.CopilotEngine) && workflowSpecifiedEngine == "" {
 			for _, opt := range constants.EngineOptions {
 				envVar := opt.SecretName
 				if opt.EnvVarName != "" {
@@ -60,12 +62,9 @@ func (c *AddInteractiveConfig) selectAIEngineAndKey() error {
 				}
 				if os.Getenv(envVar) != "" {
 					defaultEngine = opt.Value
+					addInteractiveLog.Printf("Found env var %s, recommending engine: %s", envVar, opt.Value)
 					break
 				}
-			}
-			// Priority 3: Check if user likely has Copilot (default)
-			if token, err := parser.GetGitHubToken(); err == nil && token != "" {
-				defaultEngine = string(constants.CopilotEngine)
 			}
 		}
 	}
@@ -76,12 +75,23 @@ func (c *AddInteractiveConfig) selectAIEngineAndKey() error {
 		return c.collectAPIKey(c.EngineOverride)
 	}
 
-	// Build engine options with notes about existing secrets
+	// Inform user if workflow specifies an engine
+	if workflowSpecifiedEngine != "" {
+		fmt.Fprintln(os.Stderr, console.FormatInfoMessage(fmt.Sprintf("Workflow specifies engine: %s", workflowSpecifiedEngine)))
+	}
+
+	// Build engine options with notes about existing secrets and workflow specification
 	var engineOptions []huh.Option[string]
 	for _, opt := range constants.EngineOptions {
 		label := fmt.Sprintf("%s - %s", opt.Label, opt.Description)
+		// Add markers for secret availability and workflow specification
 		if c.existingSecrets[opt.SecretName] {
 			label += " [secret exists]"
+		} else {
+			label += " [no secret]"
+		}
+		if opt.Value == workflowSpecifiedEngine {
+			label += " [specified in workflow]"
 		}
 		engineOptions = append(engineOptions, huh.NewOption(label, opt.Value))
 	}
@@ -119,135 +129,19 @@ func (c *AddInteractiveConfig) selectAIEngineAndKey() error {
 	return c.collectAPIKey(selectedEngine)
 }
 
-// collectAPIKey collects the API key for the selected engine
+// collectAPIKey collects the API key for the selected engine using the unified engine secrets functions
 func (c *AddInteractiveConfig) collectAPIKey(engine string) error {
 	addInteractiveLog.Printf("Collecting API key for engine: %s", engine)
 
-	// Copilot requires special handling with PAT creation instructions
-	if engine == "copilot" {
-		return c.collectCopilotPAT()
+	// Use the unified CheckAndCollectEngineSecrets function
+	config := EngineSecretConfig{
+		RepoSlug:             c.RepoOverride,
+		Engine:               engine,
+		Verbose:              c.Verbose,
+		ExistingSecrets:      c.existingSecrets,
+		IncludeSystemSecrets: false, // Don't include system secrets in add-wizard
+		IncludeOptional:      false,
 	}
 
-	// All other engines use the generic API key collection
-	opt := constants.GetEngineOption(engine)
-	if opt == nil {
-		return fmt.Errorf("unknown engine: %s", engine)
-	}
-
-	return c.collectGenericAPIKey(opt)
-}
-
-// collectCopilotPAT walks the user through creating a Copilot PAT
-func (c *AddInteractiveConfig) collectCopilotPAT() error {
-	addInteractiveLog.Print("Collecting Copilot PAT")
-
-	// Check if secret already exists in the repository
-	if c.existingSecrets["COPILOT_GITHUB_TOKEN"] {
-		fmt.Fprintln(os.Stderr, console.FormatSuccessMessage("Using existing COPILOT_GITHUB_TOKEN secret in repository"))
-		return nil
-	}
-
-	// Check if COPILOT_GITHUB_TOKEN is already in environment
-	existingToken := os.Getenv("COPILOT_GITHUB_TOKEN")
-	if existingToken != "" {
-		fmt.Fprintln(os.Stderr, console.FormatSuccessMessage("Found COPILOT_GITHUB_TOKEN in environment"))
-		return nil
-	}
-
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "GitHub Copilot requires a Personal Access Token (PAT) with Copilot permissions.")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Please create a token at:")
-	fmt.Fprintln(os.Stderr, console.FormatCommandMessage("  https://github.com/settings/personal-access-tokens/new"))
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Configure the token with:")
-	fmt.Fprintln(os.Stderr, "  • Token name: Agentic Workflows Copilot")
-	fmt.Fprintln(os.Stderr, "  • Expiration: 90 days (recommended for testing)")
-	fmt.Fprintln(os.Stderr, "  • Resource owner: Your personal account")
-	fmt.Fprintln(os.Stderr, "  • Repository access: \"Public repositories\" (you must use this setting even for private repos)")
-	fmt.Fprintln(os.Stderr, "  • Account permissions → Copilot Requests: Read-only")
-	fmt.Fprintln(os.Stderr, "")
-
-	var token string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("After creating, please paste your Copilot PAT:").
-				Description("The token will be stored securely as a repository secret").
-				EchoMode(huh.EchoModePassword).
-				Value(&token).
-				Validate(func(s string) error {
-					if len(s) < 10 {
-						return fmt.Errorf("token appears to be too short")
-					}
-					return nil
-				}),
-		),
-	).WithAccessible(console.IsAccessibleMode())
-
-	if err := form.Run(); err != nil {
-		return fmt.Errorf("failed to get Copilot token: %w", err)
-	}
-
-	// Store in environment for later use
-	_ = os.Setenv("COPILOT_GITHUB_TOKEN", token)
-	fmt.Fprintln(os.Stderr, console.FormatSuccessMessage("Copilot token received"))
-
-	return nil
-}
-
-// collectGenericAPIKey collects an API key for engines that use a simple key-based authentication
-func (c *AddInteractiveConfig) collectGenericAPIKey(opt *constants.EngineOption) error {
-	addInteractiveLog.Printf("Collecting API key for %s", opt.Label)
-
-	// Check if secret already exists in the repository
-	if c.existingSecrets[opt.SecretName] {
-		fmt.Fprintln(os.Stderr, console.FormatSuccessMessage(fmt.Sprintf("Using existing %s secret in repository", opt.SecretName)))
-		return nil
-	}
-
-	// Check if key is already in environment
-	envVar := opt.SecretName
-	if opt.EnvVarName != "" {
-		envVar = opt.EnvVarName
-	}
-	existingKey := os.Getenv(envVar)
-	if existingKey != "" {
-		fmt.Fprintln(os.Stderr, console.FormatSuccessMessage(fmt.Sprintf("Found %s in environment", envVar)))
-		return nil
-	}
-
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintf(os.Stderr, "%s requires an API key.\n", opt.Label)
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Get your API key from:")
-	fmt.Fprintln(os.Stderr, console.FormatCommandMessage(fmt.Sprintf("  %s", opt.KeyURL)))
-	fmt.Fprintln(os.Stderr, "")
-
-	var apiKey string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title(fmt.Sprintf("Paste your %s API key:", opt.Label)).
-				Description("The key will be stored securely as a repository secret").
-				EchoMode(huh.EchoModePassword).
-				Value(&apiKey).
-				Validate(func(s string) error {
-					if len(s) < 10 {
-						return fmt.Errorf("API key appears to be too short")
-					}
-					return nil
-				}),
-		),
-	).WithAccessible(console.IsAccessibleMode())
-
-	if err := form.Run(); err != nil {
-		return fmt.Errorf("failed to get %s API key: %w", opt.Label, err)
-	}
-
-	// Store in environment for later use
-	_ = os.Setenv(opt.SecretName, apiKey)
-	fmt.Fprintln(os.Stderr, console.FormatSuccessMessage(fmt.Sprintf("%s API key received", opt.Label)))
-
-	return nil
+	return CheckAndCollectEngineSecrets(config)
 }

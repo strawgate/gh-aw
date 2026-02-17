@@ -61,15 +61,8 @@ func RunAddInteractive(ctx context.Context, workflowSpecs []string, verbose bool
 		StopAfter:       stopAfter,
 	}
 
-	// Clear the screen for a fresh interactive experience
-	console.ClearScreen()
-
 	// Step 1: Welcome message
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "🚀 Welcome to GitHub Agentic Workflows!")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "This tool will walk you through adding an automated workflow to your repository.")
-	fmt.Fprintln(os.Stderr, "")
+	console.ShowWelcomeBanner("This tool will walk you through adding an automated workflow to your repository.")
 
 	// Step 1b: Resolve workflows early to get descriptions and validate specs
 	if err := config.resolveWorkflows(); err != nil {
@@ -168,7 +161,6 @@ func (c *AddInteractiveConfig) determineFilesToAdd() (workflowFiles []string, in
 	addInteractiveLog.Print("Determining files to add")
 
 	// Parse the workflow specs to get the files that will be added
-	// This reuses logic from addWorkflowsNormal to determine what files get created
 	for _, spec := range c.WorkflowSpecs {
 		parsed, parseErr := parseWorkflowSpec(spec)
 		if parseErr != nil {

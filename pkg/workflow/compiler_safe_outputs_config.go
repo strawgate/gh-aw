@@ -369,6 +369,7 @@ var handlerRegistry = map[string]handlerBuilder{
 			AddIfPositive("max", c.Max).
 			AddIfNotEmpty("title_prefix", c.TitlePrefix).
 			AddStringSlice("labels", c.Labels).
+			AddStringSlice("reviewers", c.Reviewers).
 			AddBoolPtr("draft", c.Draft).
 			AddIfNotEmpty("if_no_changes", c.IfNoChanges).
 			AddIfTrue("allow_empty", c.AllowEmpty).
@@ -531,6 +532,32 @@ var handlerRegistry = map[string]handlerBuilder{
 			builder.AddDefault("field_definitions", c.FieldDefinitions)
 		}
 		return builder.Build()
+	},
+	"assign_to_user": func(cfg *SafeOutputsConfig) map[string]any {
+		if cfg.AssignToUser == nil {
+			return nil
+		}
+		c := cfg.AssignToUser
+		return newHandlerConfigBuilder().
+			AddIfPositive("max", c.Max).
+			AddStringSlice("allowed", c.Allowed).
+			AddIfNotEmpty("target", c.Target).
+			AddIfNotEmpty("target-repo", c.TargetRepoSlug).
+			AddStringSlice("allowed_repos", c.AllowedRepos).
+			Build()
+	},
+	"unassign_from_user": func(cfg *SafeOutputsConfig) map[string]any {
+		if cfg.UnassignFromUser == nil {
+			return nil
+		}
+		c := cfg.UnassignFromUser
+		return newHandlerConfigBuilder().
+			AddIfPositive("max", c.Max).
+			AddStringSlice("allowed", c.Allowed).
+			AddIfNotEmpty("target", c.Target).
+			AddIfNotEmpty("target-repo", c.TargetRepoSlug).
+			AddStringSlice("allowed_repos", c.AllowedRepos).
+			Build()
 	},
 	"create_project_status_update": func(cfg *SafeOutputsConfig) map[string]any {
 		if cfg.CreateProjectStatusUpdates == nil {

@@ -120,6 +120,53 @@ async function main() {
   // The github-token is set at the step level, so the built-in github object is authenticated
   // with the correct token (GH_AW_AGENT_TOKEN by default)
 
+  // Get PR repository configuration (where the PR should be created, may differ from issue repo)
+  const pullRequestRepoEnv = process.env.GH_AW_AGENT_PULL_REQUEST_REPO?.trim();
+  let pullRequestOwner = null;
+  let pullRequestRepo = null;
+  let pullRequestRepoId = null;
+
+  // Get allowed PR repos configuration for cross-repo validation
+  const allowedPullRequestReposEnv = process.env.GH_AW_AGENT_ALLOWED_PULL_REQUEST_REPOS?.trim();
+  const allowedPullRequestRepos = parseAllowedRepos(allowedPullRequestReposEnv);
+
+  if (pullRequestRepoEnv) {
+    const parts = pullRequestRepoEnv.split("/");
+    if (parts.length === 2) {
+      // Validate PR repository against allowlist
+      // The configured pull-request-repo is treated as the default (always allowed)
+      // allowed-pull-request-repos contains additional repositories beyond pull-request-repo
+      const repoValidation = validateRepo(pullRequestRepoEnv, pullRequestRepoEnv, allowedPullRequestRepos);
+      if (!repoValidation.valid) {
+        core.setFailed(`E004: ${repoValidation.error}`);
+        return;
+      }
+
+      pullRequestOwner = parts[0];
+      pullRequestRepo = parts[1];
+      core.info(`Using pull request repository: ${pullRequestOwner}/${pullRequestRepo}`);
+
+      // Fetch the repository ID for the PR repo (needed for GraphQL agentAssignment)
+      try {
+        const pullRequestRepoQuery = `
+          query($owner: String!, $name: String!) {
+            repository(owner: $owner, name: $name) {
+              id
+            }
+          }
+        `;
+        const pullRequestRepoResponse = await github.graphql(pullRequestRepoQuery, { owner: pullRequestOwner, name: pullRequestRepo });
+        pullRequestRepoId = pullRequestRepoResponse.repository.id;
+        core.info(`Pull request repository ID: ${pullRequestRepoId}`);
+      } catch (error) {
+        core.setFailed(`Failed to fetch pull request repository ID for ${pullRequestOwner}/${pullRequestRepo}: ${getErrorMessage(error)}`);
+        return;
+      }
+    } else {
+      core.warning(`Invalid pull-request-repo format: ${pullRequestRepoEnv}. Expected owner/repo. PRs will be created in issue repository.`);
+    }
+  }
+
   // Cache agent IDs to avoid repeated lookups
   const agentCache = {};
 
@@ -180,6 +227,58 @@ async function main() {
     // - Otherwise use the configured target (defaults to "triggering")
     const hasExplicitTarget = itemForTarget.issue_number != null || itemForTarget.pull_number != null;
     const effectiveTarget = hasExplicitTarget ? "*" : targetConfig;
+
+    // Handle per-item pull_request_repo parameter (where the PR should be created)
+    // This overrides the global pull-request-repo configuration if specified
+    let effectivePullRequestRepoId = pullRequestRepoId;
+    if (item.pull_request_repo) {
+      const itemPullRequestRepo = item.pull_request_repo.trim();
+      const pullRequestRepoParts = itemPullRequestRepo.split("/");
+      if (pullRequestRepoParts.length === 2) {
+        // Validate PR repository against allowlist
+        // The global pull-request-repo (if set) is treated as the default (always allowed)
+        // allowed-pull-request-repos contains additional allowed repositories
+        const defaultPullRequestRepo = pullRequestRepoEnv || defaultRepo;
+        const pullRequestRepoValidation = validateRepo(itemPullRequestRepo, defaultPullRequestRepo, allowedPullRequestRepos);
+        if (!pullRequestRepoValidation.valid) {
+          core.error(`E004: ${pullRequestRepoValidation.error}`);
+          results.push({
+            issue_number: item.issue_number || null,
+            pull_number: item.pull_number || null,
+            agent: agentName,
+            success: false,
+            error: pullRequestRepoValidation.error,
+          });
+          continue;
+        }
+
+        // Fetch the repository ID for the item's PR repo
+        try {
+          const itemPullRequestRepoQuery = `
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                id
+              }
+            }
+          `;
+          const itemPullRequestRepoResponse = await github.graphql(itemPullRequestRepoQuery, { owner: pullRequestRepoParts[0], name: pullRequestRepoParts[1] });
+          effectivePullRequestRepoId = itemPullRequestRepoResponse.repository.id;
+          core.info(`Using per-item pull request repository: ${itemPullRequestRepo} (ID: ${effectivePullRequestRepoId})`);
+        } catch (error) {
+          core.error(`Failed to fetch pull request repository ID for ${itemPullRequestRepo}: ${getErrorMessage(error)}`);
+          results.push({
+            issue_number: item.issue_number || null,
+            pull_number: item.pull_number || null,
+            agent: agentName,
+            success: false,
+            error: `Failed to fetch pull request repository ID for ${itemPullRequestRepo}`,
+          });
+          continue;
+        }
+      } else {
+        core.warning(`Invalid pull_request_repo format: ${itemPullRequestRepo}. Expected owner/repo. Using global pull-request-repo if configured.`);
+      }
+    }
 
     // Resolve target number using the same logic as other safe outputs
     // This allows automatic resolution from workflow context when issue_number/pull_number is not explicitly provided
@@ -306,8 +405,9 @@ async function main() {
 
       // Assign agent using GraphQL mutation - uses built-in github object authenticated via github-token
       // Pass the allowed list so existing assignees are filtered before calling replaceActorsForAssignable
+      // Pass the PR repo ID if configured (to specify where the PR should be created)
       core.info(`Assigning ${agentName} coding agent to ${type} #${number}...`);
-      const success = await assignAgentToIssue(assignableId, agentId, currentAssignees, agentName, allowedAgents);
+      const success = await assignAgentToIssue(assignableId, agentId, currentAssignees, agentName, allowedAgents, effectivePullRequestRepoId);
 
       if (!success) {
         throw new Error(`Failed to assign ${agentName} via GraphQL`);

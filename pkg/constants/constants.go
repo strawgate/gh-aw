@@ -313,7 +313,7 @@ const DefaultMCPRegistryURL URL = "https://api.mcp.github.com/v0.1"
 const GitHubCopilotMCPDomain = "api.githubcopilot.com"
 
 // DefaultClaudeCodeVersion is the default version of the Claude Code CLI.
-const DefaultClaudeCodeVersion Version = "2.1.42"
+const DefaultClaudeCodeVersion Version = "2.1.44"
 
 // DefaultCopilotVersion is the default version of the GitHub Copilot CLI.
 //
@@ -372,7 +372,7 @@ const DefaultCodexVersion Version = "0.101.0"
 const DefaultGitHubMCPServerVersion Version = "v0.30.3"
 
 // DefaultFirewallVersion is the default version of the gh-aw-firewall (AWF) binary
-const DefaultFirewallVersion Version = "v0.18.0"
+const DefaultFirewallVersion Version = "v0.19.1"
 
 // AWF (Agentic Workflow Firewall) constants
 
@@ -687,20 +687,82 @@ var AgenticEngines = []string{string(ClaudeEngine), string(CodexEngine), string(
 
 // EngineOption represents a selectable AI engine with its display metadata and secret configuration
 type EngineOption struct {
-	Value       string
-	Label       string
-	Description string
-	SecretName  string // The name of the secret required for this engine (e.g., "COPILOT_GITHUB_TOKEN")
-	EnvVarName  string // Alternative environment variable name if different from SecretName (optional)
-	KeyURL      string // URL where users can obtain their API key (empty for engines with special setup like Copilot)
+	Value              string
+	Label              string
+	Description        string
+	SecretName         string   // The name of the secret required for this engine (e.g., "COPILOT_GITHUB_TOKEN")
+	AlternativeSecrets []string // Alternative secret names that can also be used for this engine
+	EnvVarName         string   // Alternative environment variable name if different from SecretName (optional)
+	KeyURL             string   // URL where users can obtain their API key/token (may be empty if not applicable)
+	WhenNeeded         string   // Human-readable description of when this secret is needed
 }
 
 // EngineOptions provides the list of available AI engines for user selection
 var EngineOptions = []EngineOption{
-	{string(CopilotEngine), "GitHub Copilot", "GitHub Copilot CLI with agent support", "COPILOT_GITHUB_TOKEN", "", ""},
-	{string(CopilotSDKEngine), "GitHub Copilot SDK", "GitHub Copilot SDK with headless mode", "COPILOT_GITHUB_TOKEN", "", ""},
-	{string(ClaudeEngine), "Claude", "Anthropic Claude Code coding agent", "ANTHROPIC_API_KEY", "", "https://console.anthropic.com/settings/keys"},
-	{string(CodexEngine), "Codex", "OpenAI Codex/GPT engine", "OPENAI_API_KEY", "", "https://platform.openai.com/api-keys"},
+	{
+		Value:       string(CopilotEngine),
+		Label:       "GitHub Copilot",
+		Description: "GitHub Copilot CLI with agent support",
+		SecretName:  "COPILOT_GITHUB_TOKEN",
+		KeyURL:      "https://github.com/settings/personal-access-tokens/new",
+		WhenNeeded:  "Copilot workflows (CLI, engine, agent tasks, etc.)",
+	},
+	{
+		Value:       string(CopilotSDKEngine),
+		Label:       "GitHub Copilot SDK",
+		Description: "GitHub Copilot SDK with headless mode",
+		SecretName:  "COPILOT_GITHUB_TOKEN",
+		KeyURL:      "https://github.com/settings/personal-access-tokens/new",
+		WhenNeeded:  "Copilot SDK workflows with headless mode",
+	},
+	{
+		Value:              string(ClaudeEngine),
+		Label:              "Claude",
+		Description:        "Anthropic Claude Code coding agent",
+		SecretName:         "ANTHROPIC_API_KEY",
+		AlternativeSecrets: []string{"CLAUDE_CODE_OAUTH_TOKEN"},
+		KeyURL:             "https://console.anthropic.com/settings/keys",
+		WhenNeeded:         "Claude engine workflows",
+	},
+	{
+		Value:              string(CodexEngine),
+		Label:              "Codex",
+		Description:        "OpenAI Codex/GPT engine",
+		SecretName:         "OPENAI_API_KEY",
+		AlternativeSecrets: []string{"CODEX_API_KEY"},
+		KeyURL:             "https://platform.openai.com/api-keys",
+		WhenNeeded:         "Codex/OpenAI engine workflows",
+	},
+}
+
+// SystemSecretSpec describes a system-level secret that is not engine-specific
+type SystemSecretSpec struct {
+	Name        string
+	WhenNeeded  string
+	Description string
+	Optional    bool
+}
+
+// SystemSecrets defines system-level secrets that are not tied to a specific engine
+var SystemSecrets = []SystemSecretSpec{
+	{
+		Name:        "GH_AW_GITHUB_TOKEN",
+		WhenNeeded:  "Cross-repo Project Ops / remote GitHub tools",
+		Description: "Fine-grained or classic PAT with contents/issues/pull-requests read+write on the repos gh-aw will touch.",
+		Optional:    false,
+	},
+	{
+		Name:        "GH_AW_AGENT_TOKEN",
+		WhenNeeded:  "Assigning agents/bots to issues or pull requests",
+		Description: "PAT for agent assignment with issues and pull-requests write on the repos where agents act.",
+		Optional:    true,
+	},
+	{
+		Name:        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+		WhenNeeded:  "Isolating MCP server permissions (advanced, optional)",
+		Description: "Optional read-mostly token for the GitHub MCP server when you want different scopes than GH_AW_GITHUB_TOKEN.",
+		Optional:    true,
+	},
 }
 
 // GetEngineOption returns the EngineOption for the given engine value, or nil if not found
@@ -711,6 +773,38 @@ func GetEngineOption(engineValue string) *EngineOption {
 		}
 	}
 	return nil
+}
+
+// GetAllEngineSecretNames returns all unique secret names across all configured engines.
+// This includes primary secrets, alternative secrets, and system-level secrets.
+// The returned slice contains no duplicates.
+func GetAllEngineSecretNames() []string {
+	seen := make(map[string]bool)
+	var secrets []string
+
+	// Add primary and alternative secrets from all engines
+	for _, opt := range EngineOptions {
+		if opt.SecretName != "" && !seen[opt.SecretName] {
+			seen[opt.SecretName] = true
+			secrets = append(secrets, opt.SecretName)
+		}
+		for _, alt := range opt.AlternativeSecrets {
+			if alt != "" && !seen[alt] {
+				seen[alt] = true
+				secrets = append(secrets, alt)
+			}
+		}
+	}
+
+	// Add system-level secrets from SystemSecrets
+	for _, s := range SystemSecrets {
+		if s.Name != "" && !seen[s.Name] {
+			seen[s.Name] = true
+			secrets = append(secrets, s.Name)
+		}
+	}
+
+	return secrets
 }
 
 // DefaultReadOnlyGitHubTools defines the default read-only GitHub MCP tools.
@@ -829,8 +923,8 @@ var PriorityJobFields = []string{"name", "runs-on", "needs", "if", "permissions"
 var PriorityWorkflowFields = []string{"on", "permissions", "if", "network", "imports", "safe-outputs", "steps"}
 
 // IgnoredFrontmatterFields are fields that should be silently ignored during frontmatter validation
-// NOTE: This is now empty as description and applyTo are properly validated by the schema
-var IgnoredFrontmatterFields = []string{}
+// NOTE: user-invokable is a GitHub Copilot custom agent field that is not part of the gh-aw schema
+var IgnoredFrontmatterFields = []string{"user-invokable"}
 
 // SharedWorkflowForbiddenFields lists fields that cannot be used in shared/included workflows.
 // These fields are only allowed in main workflows (workflows with an 'on' trigger field).

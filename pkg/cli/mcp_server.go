@@ -38,44 +38,21 @@ func mcpErrorData(v any) json.RawMessage {
 	return data
 }
 
-// actorPermissionCache stores cached actor permission lookups with TTL
-type actorPermissionCache struct {
-	permission string
-	timestamp  time.Time
-}
-
-// repositoryCache stores cached repository information with TTL
-type repositoryCache struct {
-	repository string
-	timestamp  time.Time
-}
-
-var (
-	permissionCache    = make(map[string]*actorPermissionCache)
-	permissionCacheTTL = 1 * time.Hour
-	repoCache          *repositoryCache
-	repoCacheTTL       = 1 * time.Hour
-)
-
 // getRepository retrieves the current repository name (owner/repo format).
 // Results are cached for 1 hour to avoid repeated queries.
 // Checks GITHUB_REPOSITORY environment variable first, then falls back to gh repo view.
 func getRepository() (string, error) {
 	// Check cache first
-	if repoCache != nil && time.Since(repoCache.timestamp) < repoCacheTTL {
-		mcpLog.Printf("Using cached repository: %s (age: %v)", repoCache.repository, time.Since(repoCache.timestamp))
-		return repoCache.repository, nil
+	if repo, ok := mcpCache.GetRepo(); ok {
+		mcpLog.Printf("Using cached repository: %s", repo)
+		return repo, nil
 	}
 
 	// Try GITHUB_REPOSITORY environment variable first
 	repo := os.Getenv("GITHUB_REPOSITORY")
 	if repo != "" {
 		mcpLog.Printf("Got repository from GITHUB_REPOSITORY: %s", repo)
-		// Cache the result
-		repoCache = &repositoryCache{
-			repository: repo,
-			timestamp:  time.Now(),
-		}
+		mcpCache.SetRepo(repo)
 		return repo, nil
 	}
 
@@ -94,11 +71,7 @@ func getRepository() (string, error) {
 	}
 
 	mcpLog.Printf("Got repository from gh repo view: %s", repo)
-	// Cache the result
-	repoCache = &repositoryCache{
-		repository: repo,
-		timestamp:  time.Now(),
-	}
+	mcpCache.SetRepo(repo)
 	return repo, nil
 }
 
@@ -114,15 +87,9 @@ func queryActorRole(ctx context.Context, actor string, repo string) (string, err
 	}
 
 	// Check cache first
-	cacheKey := fmt.Sprintf("%s:%s", actor, repo)
-	if cached, ok := permissionCache[cacheKey]; ok {
-		if time.Since(cached.timestamp) < permissionCacheTTL {
-			mcpLog.Printf("Using cached permission for %s in %s: %s (age: %v)", actor, repo, cached.permission, time.Since(cached.timestamp))
-			return cached.permission, nil
-		}
-		// Cache expired, remove it
-		delete(permissionCache, cacheKey)
-		mcpLog.Printf("Permission cache expired for %s in %s", actor, repo)
+	if perm, ok := mcpCache.GetPermission(actor, repo); ok {
+		mcpLog.Printf("Using cached permission for %s in %s: %s", actor, repo, perm)
+		return perm, nil
 	}
 
 	// Query GitHub API for user's permission level
@@ -142,11 +109,7 @@ func queryActorRole(ctx context.Context, actor string, repo string) (string, err
 		return "", fmt.Errorf("no permission found for actor %s in repository %s", actor, repo)
 	}
 
-	// Cache the result
-	permissionCache[cacheKey] = &actorPermissionCache{
-		permission: permission,
-		timestamp:  time.Now(),
-	}
+	mcpCache.SetPermission(actor, repo, permission)
 	mcpLog.Printf("Cached permission for %s in %s: %s", actor, repo, permission)
 
 	return permission, nil
@@ -940,18 +903,43 @@ Returns JSON with the following structure:
 		cmdArgs := []string{"audit", args.RunIDOrURL, "-o", "/tmp/gh-aw/aw-mcp/logs", "--json"}
 
 		// Execute the CLI command
+		// Use separate stdout/stderr capture instead of CombinedOutput because:
+		// - Stdout contains JSON output (--json flag)
+		// - Stderr contains console messages and debug logs that shouldn't be mixed with JSON
 		cmd := execCmd(ctx, cmdArgs...)
-		output, err := cmd.CombinedOutput()
+		stdout, err := cmd.Output()
+
+		// The audit command outputs JSON to stdout when --json flag is used.
+		// If the command fails, we need to provide detailed error information.
+		outputStr := string(stdout)
 
 		if err != nil {
+			// Try to get stderr and exit code for detailed error reporting
+			var stderr string
+			var exitCode int
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				stderr = string(exitErr.Stderr)
+				exitCode = exitErr.ExitCode()
+			}
+
+			mcpLog.Printf("Audit command exited with error: %v (stdout length: %d, stderr length: %d, exit_code: %d)",
+				err, len(outputStr), len(stderr), exitCode)
+
+			// Build detailed error data
+			errorData := map[string]any{
+				"error":         err.Error(),
+				"exit_code":     exitCode,
+				"stdout":        outputStr,
+				"stderr":        stderr,
+				"run_id_or_url": args.RunIDOrURL,
+			}
+
 			return nil, nil, &jsonrpc.Error{
 				Code:    jsonrpc.CodeInternalError,
-				Message: "failed to audit workflow run",
-				Data:    mcpErrorData(map[string]any{"error": err.Error(), "output": string(output), "run_id_or_url": args.RunIDOrURL}),
+				Message: fmt.Sprintf("failed to audit workflow run: %s", err.Error()),
+				Data:    mcpErrorData(errorData),
 			}
 		}
-
-		outputStr := string(output)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{

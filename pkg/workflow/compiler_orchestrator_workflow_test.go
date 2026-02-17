@@ -919,7 +919,7 @@ on: [invalid: yaml
 
 # Workflow
 `,
-			expectError: "parse frontmatter",
+			expectError: "sequence end token", // Check for actual YAML error message instead of "parse frontmatter"
 		},
 		{
 			name: "no markdown content for main workflow",
@@ -1022,7 +1022,7 @@ timeout-minutes: 45
 
 # Phase Test Workflow
 
-Test content with ${{ needs.activation.outputs.text }} usage.
+Test content with ${{ steps.sanitized.outputs.text }} usage.
 `
 
 	testFile := filepath.Join(tmpDir, "phase-flow.md")

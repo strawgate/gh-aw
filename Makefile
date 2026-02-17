@@ -40,6 +40,24 @@ build-darwin:
 build-windows:
 	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o $(BINARY_NAME)-windows-amd64.exe ./cmd/gh-aw
 
+# Build WebAssembly module for browser usage
+# Optionally runs wasm-opt (from Binaryen) if available for ~8% size reduction
+.PHONY: build-wasm
+build-wasm:
+	GOOS=js GOARCH=wasm go build -ldflags="-w -s" -o gh-aw.wasm ./cmd/gh-aw-wasm
+	@if command -v wasm-opt >/dev/null 2>&1; then \
+		echo "Running wasm-opt -Oz (size optimization)..."; \
+		BEFORE=$$(wc -c < gh-aw.wasm); \
+		wasm-opt -Oz --enable-bulk-memory gh-aw.wasm -o gh-aw.opt.wasm && \
+		mv gh-aw.opt.wasm gh-aw.wasm; \
+		AFTER=$$(wc -c < gh-aw.wasm); \
+		echo "✓ wasm-opt: $$BEFORE → $$AFTER bytes"; \
+	else \
+		echo "⚠ wasm-opt not found, skipping optimization (install binaryen for ~8% size reduction)"; \
+	fi
+	@echo "✓ Built gh-aw.wasm ($$(du -h gh-aw.wasm | cut -f1))"
+	@echo "  Copy wasm_exec.js from: $$(go env GOROOT)/misc/wasm/wasm_exec.js"
+
 # Test the code (runs both unlabelled unit tests and integration tests and long tests)
 .PHONY: test
 test: test-unit test-integration
@@ -110,7 +128,7 @@ bench-performance:
 		-benchmem -benchtime=3x -run=^$$ ./pkg/workflow | tee bench_performance.txt
 	@echo ""
 	@echo "Also running CLI helper benchmarks..."
-	@go test -bench='Benchmark(ExtractWorkflowNameFromFile|UpdateWorkflowTitle|FindIncludesInContent)$$' \
+	@go test -bench='Benchmark(ExtractWorkflowNameFromFile|FindIncludesInContent)$$' \
 		-benchmem -benchtime=3x -run=^$$ ./pkg/cli >> bench_performance.txt
 	@echo ""
 	@echo "Performance benchmark results saved to bench_performance.txt"
@@ -155,7 +173,7 @@ security-scan: security-gosec security-govulncheck security-trivy
 .PHONY: security-gosec
 security-gosec:
 	@echo "Running gosec security scanner..."
-	@command -v gosec >/dev/null || go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+	@command -v gosec >/dev/null || go install github.com/securego/gosec/v2/cmd/gosec@v2.23.0
 	@# Exclusions configured in .golangci.yml (linters-settings.gosec.exclude)
 	@# Keep this list in sync with .golangci.yml for consistency
 	@GOPATH=$$(go env GOPATH); \
