@@ -77,6 +77,13 @@ func WithGitRoot(gitRoot string) CompilerOption {
 	return func(c *Compiler) { c.gitRoot = gitRoot }
 }
 
+// WithInlinePrompt configures whether to inline markdown content directly in the compiled YAML
+// instead of using runtime-import macros. This is required for Wasm/browser builds where
+// the filesystem is unavailable at runtime.
+func WithInlinePrompt(inline bool) CompilerOption {
+	return func(c *Compiler) { c.inlinePrompt = inline }
+}
+
 // FileTracker interface for tracking files created during compilation
 type FileTracker interface {
 	TrackCreated(filePath string)
@@ -132,6 +139,7 @@ type Compiler struct {
 	scheduleFriendlyFormats map[int]string      // Maps schedule item index to friendly format string for current workflow
 	gitRoot                 string              // Git repository root directory (if set, used for action cache path)
 	contentOverride         string              // If set, use this content instead of reading from disk (for Wasm/in-memory compilation)
+	inlinePrompt            bool                // If true, inline markdown content in YAML instead of using runtime-import macros (for Wasm builds)
 }
 
 // NewCompiler creates a new workflow compiler with functional options.
@@ -441,7 +449,6 @@ type WorkflowData struct {
 	Runtimes              map[string]any       // runtime version overrides from frontmatter
 	PluginInfo            *PluginInfo          // Consolidated plugin information (plugins, custom token, MCP configs)
 	ToolsTimeout          int                  // timeout in seconds for tool/MCP operations (0 = use engine default)
-	GitHubToken           string               // top-level github-token expression from frontmatter
 	ToolsStartupTimeout   int                  // timeout in seconds for MCP server startup (0 = use engine default)
 	Features              map[string]any       // feature flags and configuration options from frontmatter (supports bool and string values)
 	ActionCache           *ActionCache         // cache for action pin resolutions
@@ -490,7 +497,7 @@ type SafeOutputsConfig struct {
 	PushToPullRequestBranch         *PushToPullRequestBranchConfig         `yaml:"push-to-pull-request-branch,omitempty"`
 	UploadAssets                    *UploadAssetsConfig                    `yaml:"upload-asset,omitempty"`
 	UpdateRelease                   *UpdateReleaseConfig                   `yaml:"update-release,omitempty"`               // Update GitHub release descriptions
-	CreateAgentSessions             *CreateAgentSessionConfig              `yaml:"create-agent-session,omitempty"`         // Create GitHub Copilot agent sessions
+	CreateAgentSessions             *CreateAgentSessionConfig              `yaml:"create-agent-session,omitempty"`         // Create GitHub Copilot coding agent sessions
 	UpdateProjects                  *UpdateProjectConfig                   `yaml:"update-project,omitempty"`               // Smart project board management (create/add/update)
 	CreateProjects                  *CreateProjectsConfig                  `yaml:"create-project,omitempty"`               // Create GitHub Projects V2
 	CreateProjectStatusUpdates      *CreateProjectStatusUpdateConfig       `yaml:"create-project-status-update,omitempty"` // Create GitHub project status updates

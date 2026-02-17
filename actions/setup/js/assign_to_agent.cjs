@@ -29,20 +29,34 @@ async function main() {
 
   // Check if we're in staged mode
   if (process.env.GH_AW_SAFE_OUTPUTS_STAGED === "true") {
+    // Get defaults for preview
+    const previewDefaultAgent = process.env.GH_AW_AGENT_DEFAULT?.trim() ?? "copilot";
+    const previewDefaultModel = process.env.GH_AW_AGENT_DEFAULT_MODEL?.trim();
+    const previewDefaultCustomAgent = process.env.GH_AW_AGENT_DEFAULT_CUSTOM_AGENT?.trim();
+    const previewDefaultCustomInstructions = process.env.GH_AW_AGENT_DEFAULT_CUSTOM_INSTRUCTIONS?.trim();
+
     await generateStagedPreview({
       title: "Assign to Agent",
       description: "The following agent assignments would be made if staged mode was disabled:",
       items: assignItems,
       renderItem: item => {
-        let content = "";
+        const parts = [];
         if (item.issue_number) {
-          content += `**Issue:** #${item.issue_number}\n`;
+          parts.push(`**Issue:** #${item.issue_number}`);
         } else if (item.pull_number) {
-          content += `**Pull Request:** #${item.pull_number}\n`;
+          parts.push(`**Pull Request:** #${item.pull_number}`);
         }
-        content += `**Agent:** ${item.agent || "copilot"}\n`;
-        content += "\n";
-        return content;
+        parts.push(`**Agent:** ${item.agent || previewDefaultAgent}`);
+        if (previewDefaultModel) {
+          parts.push(`**Model:** ${previewDefaultModel}`);
+        }
+        if (previewDefaultCustomAgent) {
+          parts.push(`**Custom Agent:** ${previewDefaultCustomAgent}`);
+        }
+        if (previewDefaultCustomInstructions) {
+          parts.push(`**Custom Instructions:** ${previewDefaultCustomInstructions}`);
+        }
+        return parts.join("\n") + "\n\n";
       },
     });
     return;
@@ -51,6 +65,24 @@ async function main() {
   // Get default agent from configuration
   const defaultAgent = process.env.GH_AW_AGENT_DEFAULT?.trim() ?? "copilot";
   core.info(`Default agent: ${defaultAgent}`);
+
+  // Get default model from configuration
+  const defaultModel = process.env.GH_AW_AGENT_DEFAULT_MODEL?.trim();
+  if (defaultModel) {
+    core.info(`Default model: ${defaultModel}`);
+  }
+
+  // Get default custom agent from configuration
+  const defaultCustomAgent = process.env.GH_AW_AGENT_DEFAULT_CUSTOM_AGENT?.trim();
+  if (defaultCustomAgent) {
+    core.info(`Default custom agent: ${defaultCustomAgent}`);
+  }
+
+  // Get default custom instructions from configuration
+  const defaultCustomInstructions = process.env.GH_AW_AGENT_DEFAULT_CUSTOM_INSTRUCTIONS?.trim();
+  if (defaultCustomInstructions) {
+    core.info(`Default custom instructions: ${defaultCustomInstructions}`);
+  }
 
   // Get target configuration (defaults to "triggering")
   const targetConfig = process.env.GH_AW_AGENT_TARGET?.trim() || "triggering";
@@ -175,6 +207,11 @@ async function main() {
   for (let i = 0; i < itemsToProcess.length; i++) {
     const item = itemsToProcess[i];
     const agentName = item.agent ?? defaultAgent;
+    // Model, custom agent, and custom instructions are only configurable via frontmatter defaults
+    // They are NOT available as per-item overrides in the tool call
+    const model = defaultModel;
+    const customAgent = defaultCustomAgent;
+    const customInstructions = defaultCustomInstructions;
 
     // Use these variables to allow temporary IDs to override target repo per-item.
     // Default to the configured target repo.
@@ -406,8 +443,18 @@ async function main() {
       // Assign agent using GraphQL mutation - uses built-in github object authenticated via github-token
       // Pass the allowed list so existing assignees are filtered before calling replaceActorsForAssignable
       // Pass the PR repo ID if configured (to specify where the PR should be created)
+      // Pass model, customAgent, and customInstructions if specified
       core.info(`Assigning ${agentName} coding agent to ${type} #${number}...`);
-      const success = await assignAgentToIssue(assignableId, agentId, currentAssignees, agentName, allowedAgents, effectivePullRequestRepoId);
+      if (model) {
+        core.info(`Using model: ${model}`);
+      }
+      if (customAgent) {
+        core.info(`Using custom agent: ${customAgent}`);
+      }
+      if (customInstructions) {
+        core.info(`Using custom instructions: ${customInstructions.substring(0, 100)}${customInstructions.length > 100 ? "..." : ""}`);
+      }
+      const success = await assignAgentToIssue(assignableId, agentId, currentAssignees, agentName, allowedAgents, effectivePullRequestRepoId, model, customAgent, customInstructions);
 
       if (!success) {
         throw new Error(`Failed to assign ${agentName} via GraphQL`);

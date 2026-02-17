@@ -26,6 +26,21 @@ func (c *Compiler) buildAssignToAgentStepConfig(data *WorkflowData, mainJobName 
 		customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_AGENT_DEFAULT: %q\n", cfg.DefaultAgent))
 	}
 
+	// Add default model environment variable
+	if cfg.DefaultModel != "" {
+		customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_AGENT_DEFAULT_MODEL: %q\n", cfg.DefaultModel))
+	}
+
+	// Add default custom agent environment variable
+	if cfg.DefaultCustomAgent != "" {
+		customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_AGENT_DEFAULT_CUSTOM_AGENT: %q\n", cfg.DefaultCustomAgent))
+	}
+
+	// Add default custom instructions environment variable
+	if cfg.DefaultCustomInstructions != "" {
+		customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_AGENT_DEFAULT_CUSTOM_INSTRUCTIONS: %q\n", cfg.DefaultCustomInstructions))
+	}
+
 	// Add target configuration environment variable
 	if cfg.Target != "" {
 		customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_AGENT_TARGET: %q\n", cfg.Target))
@@ -74,14 +89,14 @@ func (c *Compiler) buildAssignToAgentStepConfig(data *WorkflowData, mainJobName 
 	condition := BuildSafeOutputType("assign_to_agent")
 
 	return SafeOutputStepConfig{
-		StepName:      "Assign To Agent",
-		StepID:        "assign_to_agent",
-		ScriptName:    "assign_to_agent",
-		Script:        getAssignToAgentScript(),
-		CustomEnvVars: customEnvVars,
-		Condition:     condition,
-		Token:         cfg.GitHubToken,
-		UseAgentToken: true,
+		StepName:                   "Assign To Agent",
+		StepID:                     "assign_to_agent",
+		ScriptName:                 "assign_to_agent",
+		Script:                     getAssignToAgentScript(),
+		CustomEnvVars:              customEnvVars,
+		Condition:                  condition,
+		Token:                      cfg.GitHubToken,
+		UseCopilotCodingAgentToken: true,
 	}
 }
 
@@ -96,13 +111,13 @@ func (c *Compiler) buildCreateAgentSessionStepConfig(data *WorkflowData, mainJob
 	condition := BuildSafeOutputType("create_agent_session")
 
 	return SafeOutputStepConfig{
-		StepName:        "Create Agent Session",
-		StepID:          "create_agent_session",
-		Script:          "const { main } = require('/opt/gh-aw/actions/create_agent_session.cjs'); await main();",
-		CustomEnvVars:   customEnvVars,
-		Condition:       condition,
-		Token:           cfg.GitHubToken,
-		UseCopilotToken: true,
+		StepName:                "Create Agent Session",
+		StepID:                  "create_agent_session",
+		Script:                  "const { main } = require('/opt/gh-aw/actions/create_agent_session.cjs'); await main();",
+		CustomEnvVars:           customEnvVars,
+		Condition:               condition,
+		Token:                   cfg.GitHubToken,
+		UseCopilotRequestsToken: true,
 	}
 }
 
@@ -125,9 +140,13 @@ func (c *Compiler) buildCreateProjectStepConfig(data *WorkflowData, mainJobName 
 	}
 
 	// Get the effective token using the Projects-specific precedence chain
-	// This includes fallback to GH_AW_PROJECT_GITHUB_TOKEN if no custom token is configured
+	// Precedence: per-config token > safe-outputs level token > GH_AW_PROJECT_GITHUB_TOKEN
 	// Note: Projects v2 requires a PAT or GitHub App - the default GITHUB_TOKEN cannot work
-	effectiveToken := getEffectiveProjectGitHubToken(cfg.GitHubToken, data.GitHubToken)
+	configToken := cfg.GitHubToken
+	if configToken == "" && data.SafeOutputs.GitHubToken != "" {
+		configToken = data.SafeOutputs.GitHubToken
+	}
+	effectiveToken := getEffectiveProjectGitHubToken(configToken)
 
 	// Always expose the effective token as GH_AW_PROJECT_GITHUB_TOKEN environment variable
 	// The JavaScript code checks process.env.GH_AW_PROJECT_GITHUB_TOKEN to provide helpful error messages
