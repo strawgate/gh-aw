@@ -585,8 +585,8 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 
 						// After resolving against the base path, reject paths that escape
 						// the repository root (resolved path starts with "../")
-						resolvedFile := strings.SplitN(resolvedPath, "@", 2)[0]          // strip @ref
-						repoRelative := strings.SplitN(resolvedFile, "/", 3)              // owner/repo/path
+						resolvedFile := strings.SplitN(resolvedPath, "@", 2)[0] // strip @ref
+						repoRelative := strings.SplitN(resolvedFile, "/", 3)    // owner/repo/path
 						if len(repoRelative) >= 3 && strings.HasPrefix(repoRelative[2], "..") {
 							return nil, fmt.Errorf("nested import '%s' from remote file '%s' escapes repository root", nestedFilePath, item.importPath)
 						}
