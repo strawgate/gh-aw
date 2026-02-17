@@ -245,14 +245,14 @@ func downloadIncludeFromWorkflowSpec(spec string, cache *ImportCache) (string, e
 			sha = resolvedSHA
 			// Check cache using SHA
 			if cachedPath, found := cache.Get(owner, repo, filePath, sha); found {
-				remoteLog.Printf("Using cached import: %s/%s/%s@%s (SHA: %s)", owner, repo, filePath, ref, sha)
+				remoteLog.Printf("Using cached import: %s (SHA: %s)", FormatWorkflowSpec(owner, repo, filePath, ref), sha)
 				return cachedPath, nil
 			}
 		}
 	}
 
 	// Download the file content from GitHub
-	remoteLog.Printf("Fetching file from GitHub: %s/%s/%s@%s", owner, repo, filePath, ref)
+	remoteLog.Printf("Fetching file from GitHub: %s", FormatWorkflowSpec(owner, repo, filePath, ref))
 	content, err := downloadFileFromGitHub(owner, repo, filePath, ref)
 	if err != nil {
 		return "", fmt.Errorf("failed to download include from %s: %w", spec, err)
@@ -391,7 +391,7 @@ func resolveRefToSHA(owner, repo, ref string) (string, error) {
 // downloadFileViaGit downloads a file from a Git repository using git commands
 // This is a fallback for when GitHub API authentication fails
 func downloadFileViaGit(owner, repo, path, ref string) ([]byte, error) {
-	remoteLog.Printf("Attempting git fallback for %s/%s/%s@%s", owner, repo, path, ref)
+	remoteLog.Printf("Attempting git fallback for %s", FormatWorkflowSpec(owner, repo, path, ref))
 
 	// Use git archive to get the file content without cloning
 	// This works for public repositories without authentication
@@ -414,14 +414,14 @@ func downloadFileViaGit(owner, repo, path, ref string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to extract file from git archive: %w", err)
 	}
 
-	remoteLog.Printf("Successfully downloaded file via git archive: %s/%s/%s@%s", owner, repo, path, ref)
+	remoteLog.Printf("Successfully downloaded file via git archive: %s", FormatWorkflowSpec(owner, repo, path, ref))
 	return content, nil
 }
 
 // downloadFileViaGitClone downloads a file by shallow cloning the repository
 // This is used as a fallback when git archive doesn't work
 func downloadFileViaGitClone(owner, repo, path, ref string) ([]byte, error) {
-	remoteLog.Printf("Attempting git clone fallback for %s/%s/%s@%s", owner, repo, path, ref)
+	remoteLog.Printf("Attempting git clone fallback for %s", FormatWorkflowSpec(owner, repo, path, ref))
 
 	// Create a temporary directory for the shallow clone
 	tmpDir, err := os.MkdirTemp("", "gh-aw-git-clone-*")
@@ -469,7 +469,7 @@ func downloadFileViaGitClone(owner, repo, path, ref string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read file from cloned repository: %w", err)
 	}
 
-	remoteLog.Printf("Successfully downloaded file via git clone: %s/%s/%s@%s", owner, repo, path, ref)
+	remoteLog.Printf("Successfully downloaded file via git clone: %s", FormatWorkflowSpec(owner, repo, path, ref))
 	return content, nil
 }
 
@@ -484,7 +484,7 @@ func isNotFoundError(errMsg string) bool {
 // A nil error with false means the path is not a symlink (e.g., it's a directory or file).
 func checkRemoteSymlink(client *api.RESTClient, owner, repo, dirPath, ref string) (string, bool, error) {
 	endpoint := fmt.Sprintf("repos/%s/%s/contents/%s?ref=%s", owner, repo, dirPath, ref)
-	remoteLog.Printf("Checking if path component is symlink: %s/%s/%s@%s", owner, repo, dirPath, ref)
+	remoteLog.Printf("Checking if path component is symlink: %s", FormatWorkflowSpec(owner, repo, dirPath, ref))
 
 	// The Contents API returns a JSON object for files/symlinks but a JSON array for directories.
 	// Decode into json.RawMessage first to distinguish these cases without error-driven control flow.
@@ -531,7 +531,7 @@ func resolveRemoteSymlinks(owner, repo, filePath, ref string) (string, error) {
 		return "", fmt.Errorf("no directory components to resolve in path: %s", filePath)
 	}
 
-	remoteLog.Printf("Attempting symlink resolution for %s/%s/%s@%s (%d path components)", owner, repo, filePath, ref, len(parts))
+	remoteLog.Printf("Attempting symlink resolution for %s (%d path components)", FormatWorkflowSpec(owner, repo, filePath, ref), len(parts))
 
 	client, err := api.DefaultRESTClient()
 	if err != nil {
@@ -619,7 +619,7 @@ func downloadFileFromGitHubWithDepth(owner, repo, path, ref string, symlinkDepth
 
 		// Check if this is an authentication error
 		if gitutil.IsAuthError(errStr) {
-			remoteLog.Printf("GitHub API authentication failed, attempting git fallback for %s/%s/%s@%s", owner, repo, path, ref)
+			remoteLog.Printf("GitHub API authentication failed, attempting git fallback for %s", FormatWorkflowSpec(owner, repo, path, ref))
 			// Try fallback using git commands for public repositories
 			content, gitErr := downloadFileViaGit(owner, repo, path, ref)
 			if gitErr != nil {
@@ -631,7 +631,7 @@ func downloadFileFromGitHubWithDepth(owner, repo, path, ref string, symlinkDepth
 
 		// Check if this is a 404 — the path may traverse a symlink that the API doesn't follow
 		if isNotFoundError(errStr) && symlinkDepth < constants.MaxSymlinkDepth {
-			remoteLog.Printf("File not found at %s/%s/%s@%s, checking for symlinks in path (depth: %d)", owner, repo, path, ref, symlinkDepth)
+			remoteLog.Printf("File not found at %s, checking for symlinks in path (depth: %d)", FormatWorkflowSpec(owner, repo, path, ref), symlinkDepth)
 			resolvedPath, resolveErr := resolveRemoteSymlinks(owner, repo, path, ref)
 			if resolveErr == nil && resolvedPath != path {
 				remoteLog.Printf("Retrying download with symlink-resolved path: %s -> %s", path, resolvedPath)
@@ -639,12 +639,12 @@ func downloadFileFromGitHubWithDepth(owner, repo, path, ref string, symlinkDepth
 			}
 		}
 
-		return nil, fmt.Errorf("failed to fetch file content from %s/%s/%s@%s: %w", owner, repo, path, ref, err)
+		return nil, fmt.Errorf("failed to fetch file content from %s: %w", FormatWorkflowSpec(owner, repo, path, ref), err)
 	}
 
 	// Verify we have content
 	if fileContent.Content == "" {
-		return nil, fmt.Errorf("empty content returned from GitHub API for %s/%s/%s@%s", owner, repo, path, ref)
+		return nil, fmt.Errorf("empty content returned from GitHub API for %s", FormatWorkflowSpec(owner, repo, path, ref))
 	}
 
 	// Decode base64 content using native Go base64 package

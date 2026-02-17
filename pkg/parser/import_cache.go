@@ -76,22 +76,22 @@ func (c *ImportCache) Get(owner, repo, path, sha string) (string, bool) {
 	// Check if the cached file exists
 	if _, err := os.Stat(fullCachePath); err != nil {
 		if os.IsNotExist(err) {
-			importCacheLog.Printf("Cache miss: %s/%s/%s@%s", owner, repo, path, sha)
+			importCacheLog.Printf("Cache miss: %s", FormatWorkflowSpec(owner, repo, path, sha))
 		} else {
 			// Log other types of errors (permissions, I/O issues, etc.)
-			importCacheLog.Printf("Cache access error for %s/%s/%s@%s: %v", owner, repo, path, sha, err)
+			importCacheLog.Printf("Cache access error for %s: %v", FormatWorkflowSpec(owner, repo, path, sha), err)
 		}
 		return "", false
 	}
 
-	importCacheLog.Printf("Cache hit: %s/%s/%s@%s -> %s", owner, repo, path, sha, fullCachePath)
+	importCacheLog.Printf("Cache hit: %s -> %s", FormatWorkflowSpec(owner, repo, path, sha), fullCachePath)
 	return fullCachePath, true
 }
 
 // Set stores a new cache entry by saving the content to the cache directory
 // sha parameter should be the resolved commit SHA
 func (c *ImportCache) Set(owner, repo, path, sha string, content []byte) (string, error) {
-	importCacheLog.Printf("Setting cache entry: %s/%s/%s@%s, size=%d bytes", owner, repo, path, sha, len(content))
+	importCacheLog.Printf("Setting cache entry: %s, size=%d bytes", FormatWorkflowSpec(owner, repo, path, sha), len(content))
 
 	// Validate file size (max 10MB)
 	const maxFileSize = 10 * 1024 * 1024
@@ -131,7 +131,7 @@ func (c *ImportCache) Set(owner, repo, path, sha string, content []byte) (string
 		return "", err
 	}
 
-	importCacheLog.Printf("Cached import: %s/%s/%s@%s -> %s", owner, repo, path, sha, fullCachePath)
+	importCacheLog.Printf("Cached import: %s -> %s", FormatWorkflowSpec(owner, repo, path, sha), fullCachePath)
 	return fullCachePath, nil
 }
 

@@ -3,7 +3,6 @@
 package parser
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -118,6 +117,171 @@ func TestParseRemoteOrigin(t *testing.T) {
 	}
 }
 
+func TestFormatWorkflowSpec(t *testing.T) {
+	tests := []struct {
+		name     string
+		owner    string
+		repo     string
+		filePath string
+		ref      string
+		expected string
+	}{
+		{
+			name:     "basic spec with branch ref",
+			owner:    "elastic",
+			repo:     "ai-github-actions",
+			filePath: "gh-agent-workflows/file.md",
+			ref:      "main",
+			expected: "elastic/ai-github-actions/gh-agent-workflows/file.md@main",
+		},
+		{
+			name:     "spec with SHA ref",
+			owner:    "elastic",
+			repo:     "ai-github-actions",
+			filePath: "gh-agent-workflows/gh-aw-fragments/tools.md",
+			ref:      "160c33700227b5472dc3a08aeea1e774389a1a84",
+			expected: "elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/tools.md@160c33700227b5472dc3a08aeea1e774389a1a84",
+		},
+		{
+			name:     "spec with tag ref",
+			owner:    "org",
+			repo:     "repo",
+			filePath: "dir/file.md",
+			ref:      "v1.0",
+			expected: "org/repo/dir/file.md@v1.0",
+		},
+		{
+			name:     "spec with deep path",
+			owner:    "org",
+			repo:     "repo",
+			filePath: ".github/workflows/shared/tools.md",
+			ref:      "main",
+			expected: "org/repo/.github/workflows/shared/tools.md@main",
+		},
+		{
+			name:     "spec with single file",
+			owner:    "org",
+			repo:     "repo",
+			filePath: "file.md",
+			ref:      "main",
+			expected: "org/repo/file.md@main",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FormatWorkflowSpec(tt.owner, tt.repo, tt.filePath, tt.ref)
+			assert.Equal(t, tt.expected, result, "FormatWorkflowSpec should produce canonical format")
+		})
+	}
+}
+
+func TestRemoteImportOriginString(t *testing.T) {
+	tests := []struct {
+		name     string
+		origin   *remoteImportOrigin
+		expected string
+	}{
+		{
+			name:     "basic origin",
+			origin:   &remoteImportOrigin{Owner: "elastic", Repo: "ai-github-actions", Ref: "main"},
+			expected: "elastic/ai-github-actions@main",
+		},
+		{
+			name:     "origin with SHA",
+			origin:   &remoteImportOrigin{Owner: "org", Repo: "repo", Ref: "abc123"},
+			expected: "org/repo@abc123",
+		},
+		{
+			name:     "origin with tag",
+			origin:   &remoteImportOrigin{Owner: "org", Repo: "repo", Ref: "v2.0"},
+			expected: "org/repo@v2.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.origin.String()
+			assert.Equal(t, tt.expected, result, "String() should return owner/repo@ref")
+		})
+	}
+}
+
+func TestResolveNestedImport(t *testing.T) {
+	tests := []struct {
+		name         string
+		origin       *remoteImportOrigin
+		relativePath string
+		expected     string
+	}{
+		{
+			name: "resolves relative to non-empty base path",
+			origin: &remoteImportOrigin{
+				Owner: "elastic", Repo: "ai-github-actions", Ref: "main", BasePath: "gh-agent-workflows",
+			},
+			relativePath: "gh-aw-fragments/tools.md",
+			expected:     "elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/tools.md@main",
+		},
+		{
+			name: "resolves relative to .github/workflows base path",
+			origin: &remoteImportOrigin{
+				Owner: "elastic", Repo: "ai-github-actions", Ref: "main", BasePath: ".github/workflows",
+			},
+			relativePath: "gh-aw-fragments/tools.md",
+			expected:     "elastic/ai-github-actions/.github/workflows/gh-aw-fragments/tools.md@main",
+		},
+		{
+			name: "resolves with empty base path at repo root",
+			origin: &remoteImportOrigin{
+				Owner: "org", Repo: "repo", Ref: "v1.0", BasePath: "",
+			},
+			relativePath: "dir/file.md",
+			expected:     "org/repo/dir/file.md@v1.0",
+		},
+		{
+			name: "strips ./ prefix from relative path",
+			origin: &remoteImportOrigin{
+				Owner: "org", Repo: "repo", Ref: "v2.0", BasePath: ".github/workflows",
+			},
+			relativePath: "./shared/tools.md",
+			expected:     "org/repo/.github/workflows/shared/tools.md@v2.0",
+		},
+		{
+			name: "preserves SHA ref",
+			origin: &remoteImportOrigin{
+				Owner: "elastic", Repo: "ai-github-actions",
+				Ref: "160c33700227b5472dc3a08aeea1e774389a1a84", BasePath: "gh-agent-workflows",
+			},
+			relativePath: "gh-aw-fragments/formatting.md",
+			expected:     "elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/formatting.md@160c33700227b5472dc3a08aeea1e774389a1a84",
+		},
+		{
+			name: "multi-level base path",
+			origin: &remoteImportOrigin{
+				Owner: "org", Repo: "repo", Ref: "main", BasePath: "a/b/c",
+			},
+			relativePath: "dir/file.md",
+			expected:     "org/repo/a/b/c/dir/file.md@main",
+		},
+		{
+			name: "single file without subdirectory",
+			origin: &remoteImportOrigin{
+				Owner: "org", Repo: "repo", Ref: "main", BasePath: "base",
+			},
+			relativePath: "file.md",
+			expected:     "org/repo/base/file.md@main",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.origin.ResolveNestedImport(tt.relativePath)
+			assert.Equal(t, tt.expected, result, "ResolveNestedImport(%q)", tt.relativePath)
+			assert.True(t, isWorkflowSpec(result), "Result should be a valid workflowspec")
+		})
+	}
+}
+
 func TestLocalImportResolutionBaseline(t *testing.T) {
 	// Baseline test: verifies local relative imports resolve correctly.
 	// This ensures the import processor still works for non-remote imports
@@ -152,16 +316,10 @@ func TestRemoteOriginPropagation(t *testing.T) {
 	// We can't easily test the full remote fetch flow in a unit test,
 	// but we can verify the parsing and propagation logic
 
-	// Helper to construct the resolved workflowspec for a nested import,
-	// mirroring the logic in the import processor.
+	// Use the ResolveNestedImport method directly - this is the same
+	// helper used by the import processor at runtime.
 	resolveNested := func(origin *remoteImportOrigin, nestedPath string) string {
-		cleanPath := path.Clean(strings.TrimPrefix(nestedPath, "./"))
-		var basePrefix string
-		if origin.BasePath != "" {
-			basePrefix = origin.BasePath + "/"
-		}
-		return fmt.Sprintf("%s/%s/%s%s@%s",
-			origin.Owner, origin.Repo, basePrefix, cleanPath, origin.Ref)
+		return origin.ResolveNestedImport(nestedPath)
 	}
 
 	t.Run("workflowspec import gets remote origin with base path", func(t *testing.T) {

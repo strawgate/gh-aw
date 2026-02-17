@@ -112,7 +112,7 @@ func TestImportCacheMultipleFiles(t *testing.T) {
 	for _, f := range files {
 		_, err := cache.Set(f.owner, f.repo, f.path, f.sha, []byte(f.content))
 		if err != nil {
-			t.Fatalf("Failed to cache file %s/%s/%s@%s: %v", f.owner, f.repo, f.path, f.sha, err)
+			t.Fatalf("Failed to cache file %s: %v", FormatWorkflowSpec(f.owner, f.repo, f.path, f.sha), err)
 		}
 	}
 
@@ -120,7 +120,7 @@ func TestImportCacheMultipleFiles(t *testing.T) {
 	for _, f := range files {
 		path, found := cache.Get(f.owner, f.repo, f.path, f.sha)
 		if !found {
-			t.Errorf("Failed to retrieve cached file %s/%s/%s@%s", f.owner, f.repo, f.path, f.sha)
+			t.Errorf("Failed to retrieve cached file %s", FormatWorkflowSpec(f.owner, f.repo, f.path, f.sha))
 			continue
 		}
 
@@ -131,8 +131,8 @@ func TestImportCacheMultipleFiles(t *testing.T) {
 		}
 
 		if string(content) != f.content {
-			t.Errorf("Content mismatch for %s/%s/%s@%s. Expected %q, got %q",
-				f.owner, f.repo, f.path, f.sha, f.content, string(content))
+			t.Errorf("Content mismatch for %s. Expected %q, got %q",
+				FormatWorkflowSpec(f.owner, f.repo, f.path, f.sha), f.content, string(content))
 		}
 	}
 
@@ -142,7 +142,7 @@ func TestImportCacheMultipleFiles(t *testing.T) {
 	for _, f := range files {
 		path, found := cache2.Get(f.owner, f.repo, f.path, f.sha)
 		if !found {
-			t.Errorf("Failed to retrieve cached file from new instance %s/%s/%s@%s", f.owner, f.repo, f.path, f.sha)
+			t.Errorf("Failed to retrieve cached file from new instance %s", FormatWorkflowSpec(f.owner, f.repo, f.path, f.sha))
 			continue
 		}
 
@@ -153,8 +153,8 @@ func TestImportCacheMultipleFiles(t *testing.T) {
 		}
 
 		if string(content) != f.content {
-			t.Errorf("Content mismatch from new instance for %s/%s/%s@%s. Expected %q, got %q",
-				f.owner, f.repo, f.path, f.sha, f.content, string(content))
+			t.Errorf("Content mismatch from new instance for %s. Expected %q, got %q",
+				FormatWorkflowSpec(f.owner, f.repo, f.path, f.sha), f.content, string(content))
 		}
 	}
 }
