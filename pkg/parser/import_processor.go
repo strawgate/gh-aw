@@ -90,9 +90,10 @@ func ProcessImportsFromFrontmatter(frontmatter map[string]any, baseDir string) (
 // When a file is fetched from a remote GitHub repository via workflowspec,
 // its nested relative imports must be resolved against the same remote repo.
 type remoteImportOrigin struct {
-	Owner string // Repository owner (e.g., "elastic")
-	Repo  string // Repository name (e.g., "ai-github-actions")
-	Ref   string // Git ref - branch, tag, or SHA (e.g., "main", "v1.0.0", "abc123...")
+	Owner    string // Repository owner (e.g., "elastic")
+	Repo     string // Repository name (e.g., "ai-github-actions")
+	Ref      string // Git ref - branch, tag, or SHA (e.g., "main", "v1.0.0", "abc123...")
+	BasePath string // Base path for resolving nested imports (e.g., "gh-agent-workflows" or ".github/workflows")
 }
 
 // importQueueItem represents a file to be imported with its context
@@ -105,9 +106,21 @@ type importQueueItem struct {
 	remoteOrigin *remoteImportOrigin // Remote origin context (non-nil when imported from a remote repo)
 }
 
-// parseRemoteOrigin extracts the remote origin (owner, repo, ref) from a workflowspec path.
+// parseRemoteOrigin extracts the remote origin (owner, repo, ref, basePath) from a workflowspec path.
 // Returns nil if the path is not a valid workflowspec.
 // Format: owner/repo/path[@ref] where ref defaults to "main" if not specified.
+//
+// BasePath is derived from the workflowspec path by removing the last two path components
+// (which represent the 2-level import: dir/file.md). For example:
+//
+//	"elastic/ai-github-actions/gh-agent-workflows/gh-aw-workflows/file.md@sha"
+//	  → BasePath = "gh-agent-workflows"
+//
+//	"elastic/ai-github-actions/.github/workflows/gh-aw-workflows/file.md@sha"
+//	  → BasePath = ".github/workflows"
+//
+//	"elastic/ai-github-actions/dir/file.md@sha"
+//	  → BasePath = "" (import is directly under repo root)
 func parseRemoteOrigin(spec string) *remoteImportOrigin {
 	// Remove section reference if present
 	cleanSpec := spec
@@ -129,10 +142,20 @@ func parseRemoteOrigin(spec string) *remoteImportOrigin {
 		return nil
 	}
 
+	// Extract base path: everything between owner/repo/ and the last 2 path components.
+	// Import paths are always 2-level (dir/file.md), so the base is the prefix
+	// before the import portion. For "owner/repo/base/dir/file.md", base = "base".
+	repoPathParts := slashParts[2:] // everything after owner/repo
+	var basePath string
+	if len(repoPathParts) > 2 {
+		basePath = strings.Join(repoPathParts[:len(repoPathParts)-2], "/")
+	}
+
 	return &remoteImportOrigin{
-		Owner: slashParts[0],
-		Repo:  slashParts[1],
-		Ref:   ref,
+		Owner:    slashParts[0],
+		Repo:     slashParts[1],
+		Ref:      ref,
+		BasePath: basePath,
 	}
 }
 
@@ -307,7 +330,7 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 		if isWorkflowSpec(filePath) {
 			origin = parseRemoteOrigin(filePath)
 			if origin != nil {
-				importLog.Printf("Tracking remote origin for workflowspec: %s/%s@%s", origin.Owner, origin.Repo, origin.Ref)
+				importLog.Printf("Tracking remote origin for workflowspec: %s/%s@%s (basePath: %q)", origin.Owner, origin.Repo, origin.Ref, origin.BasePath)
 			}
 		}
 
@@ -491,21 +514,27 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 					resolvedPath := nestedFilePath
 					var nestedRemoteOrigin *remoteImportOrigin
 
-					if item.remoteOrigin != nil && !isWorkflowSpec(nestedFilePath) {
-						// Parent was fetched from a remote repo and nested path is relative.
-						// Convert to a workflowspec that resolves against the remote repo's
-						// .github/workflows/ directory (mirrors local compilation behavior).
-						cleanPath := path.Clean(strings.TrimPrefix(nestedFilePath, "./"))
+				if item.remoteOrigin != nil && !isWorkflowSpec(nestedFilePath) {
+					// Parent was fetched from a remote repo and nested path is relative.
+					// Convert to a workflowspec that resolves against the parent's base
+					// path in the remote repo. The base path is derived from the parent
+					// workflowspec (e.g., "gh-agent-workflows" or ".github/workflows").
+					cleanPath := path.Clean(strings.TrimPrefix(nestedFilePath, "./"))
 
-						// Reject paths that escape .github/workflows/ (e.g., ../../../etc/passwd)
-						if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || path.IsAbs(cleanPath) {
-							return nil, fmt.Errorf("nested import '%s' from remote file '%s' escapes .github/workflows/ base directory", nestedFilePath, item.importPath)
-						}
+					// Reject paths that escape the base directory (e.g., ../../../etc/passwd)
+					if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || path.IsAbs(cleanPath) {
+						return nil, fmt.Errorf("nested import '%s' from remote file '%s' escapes base directory", nestedFilePath, item.importPath)
+					}
 
-						resolvedPath = fmt.Sprintf("%s/%s/.github/workflows/%s@%s",
-							item.remoteOrigin.Owner, item.remoteOrigin.Repo, cleanPath, item.remoteOrigin.Ref)
-						nestedRemoteOrigin = item.remoteOrigin
-						importLog.Printf("Resolving nested import as remote workflowspec: %s -> %s", nestedFilePath, resolvedPath)
+					var basePrefix string
+					if item.remoteOrigin.BasePath != "" {
+						basePrefix = item.remoteOrigin.BasePath + "/"
+					}
+
+					resolvedPath = fmt.Sprintf("%s/%s/%s%s@%s",
+						item.remoteOrigin.Owner, item.remoteOrigin.Repo, basePrefix, cleanPath, item.remoteOrigin.Ref)
+					nestedRemoteOrigin = item.remoteOrigin
+					importLog.Printf("Resolving nested import as remote workflowspec: %s -> %s (basePath: %q)", nestedFilePath, resolvedPath, item.remoteOrigin.BasePath)
 					} else if isWorkflowSpec(nestedFilePath) {
 						// Nested import is itself a workflowspec - parse its remote origin
 						nestedRemoteOrigin = parseRemoteOrigin(nestedFilePath)
