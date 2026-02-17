@@ -514,27 +514,27 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 					resolvedPath := nestedFilePath
 					var nestedRemoteOrigin *remoteImportOrigin
 
-				if item.remoteOrigin != nil && !isWorkflowSpec(nestedFilePath) {
-					// Parent was fetched from a remote repo and nested path is relative.
-					// Convert to a workflowspec that resolves against the parent's base
-					// path in the remote repo. The base path is derived from the parent
-					// workflowspec (e.g., "gh-agent-workflows" or ".github/workflows").
-					cleanPath := path.Clean(strings.TrimPrefix(nestedFilePath, "./"))
+					if item.remoteOrigin != nil && !isWorkflowSpec(nestedFilePath) {
+						// Parent was fetched from a remote repo and nested path is relative.
+						// Convert to a workflowspec that resolves against the parent's base
+						// path in the remote repo. The base path is derived from the parent
+						// workflowspec (e.g., "gh-agent-workflows" or ".github/workflows").
+						cleanPath := path.Clean(strings.TrimPrefix(nestedFilePath, "./"))
 
-					// Reject paths that escape the base directory (e.g., ../../../etc/passwd)
-					if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || path.IsAbs(cleanPath) {
-						return nil, fmt.Errorf("nested import '%s' from remote file '%s' escapes base directory", nestedFilePath, item.importPath)
-					}
+						// Reject paths that escape the base directory (e.g., ../../../etc/passwd)
+						if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || path.IsAbs(cleanPath) {
+							return nil, fmt.Errorf("nested import '%s' from remote file '%s' escapes base directory", nestedFilePath, item.importPath)
+						}
 
-					var basePrefix string
-					if item.remoteOrigin.BasePath != "" {
-						basePrefix = item.remoteOrigin.BasePath + "/"
-					}
+						var basePrefix string
+						if item.remoteOrigin.BasePath != "" {
+							basePrefix = item.remoteOrigin.BasePath + "/"
+						}
 
-					resolvedPath = fmt.Sprintf("%s/%s/%s%s@%s",
-						item.remoteOrigin.Owner, item.remoteOrigin.Repo, basePrefix, cleanPath, item.remoteOrigin.Ref)
-					nestedRemoteOrigin = item.remoteOrigin
-					importLog.Printf("Resolving nested import as remote workflowspec: %s -> %s (basePath: %q)", nestedFilePath, resolvedPath, item.remoteOrigin.BasePath)
+						resolvedPath = fmt.Sprintf("%s/%s/%s%s@%s",
+							item.remoteOrigin.Owner, item.remoteOrigin.Repo, basePrefix, cleanPath, item.remoteOrigin.Ref)
+						nestedRemoteOrigin = item.remoteOrigin
+						importLog.Printf("Resolving nested import as remote workflowspec: %s -> %s (basePath: %q)", nestedFilePath, resolvedPath, item.remoteOrigin.BasePath)
 					} else if isWorkflowSpec(nestedFilePath) {
 						// Nested import is itself a workflowspec - parse its remote origin
 						nestedRemoteOrigin = parseRemoteOrigin(nestedFilePath)
@@ -566,8 +566,19 @@ func processImportsFromFrontmatterWithManifestAndSource(frontmatter map[string]a
 					// Check for cycles - skip if already visited
 					if !visited[nestedFullPath] {
 						visited[nestedFullPath] = true
+
+						// Use the resolved path as the import path so that downstream
+						// phases (topological sort, security scan) can re-resolve it.
+						// For remote nested imports, resolvedPath is the full workflowspec
+						// (e.g., "elastic/repo/base/dir/file.md@sha"); for local and
+						// workflowspec imports it equals nestedFilePath (unchanged).
+						queueImportPath := resolvedPath
+						if nestedSectionName != "" {
+							queueImportPath += "#" + nestedSectionName
+						}
+
 						queue = append(queue, importQueueItem{
-							importPath:   nestedImportPath,
+							importPath:   queueImportPath,
 							fullPath:     nestedFullPath,
 							sectionName:  nestedSectionName,
 							baseDir:      baseDir, // Use original baseDir, not nestedBaseDir
