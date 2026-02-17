@@ -45,6 +45,8 @@ const divider = $('divider');
 const panelEditor = $('panelEditor');
 const panelOutput = $('panelOutput');
 const panels = $('panels');
+const tabBar = $('tabBar');
+const tabAdd = $('tabAdd');
 
 // ---------------------------------------------------------------
 // State
@@ -55,6 +57,11 @@ let isCompiling = false;
 let autoCompile = true;
 let compileTimer = null;
 let currentYaml = '';
+
+// File tabs state: ordered list of { name, content }
+const MAIN_FILE = 'workflow.md';
+let files = [{ name: MAIN_FILE, content: DEFAULT_CONTENT }];
+let activeTab = MAIN_FILE;
 
 // ---------------------------------------------------------------
 // Theme
@@ -117,13 +124,102 @@ function syncLineNumberScroll() {
 }
 
 // ---------------------------------------------------------------
+// File tabs
+// ---------------------------------------------------------------
+function getFile(name) {
+  return files.find(f => f.name === name);
+}
+
+function renderTabs() {
+  tabBar.querySelectorAll('.tab').forEach(el => el.remove());
+
+  for (const file of files) {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (file.name === activeTab ? ' active' : '');
+    tab.dataset.name = file.name;
+
+    const label = document.createElement('span');
+    label.textContent = file.name;
+    tab.appendChild(label);
+
+    if (file.name !== MAIN_FILE) {
+      const close = document.createElement('button');
+      close.className = 'tab-close';
+      close.title = 'Remove file';
+      close.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.749.749 0 011.275.326.749.749 0 01-.215.734L9.06 8l3.22 3.22a.749.749 0 01-.326 1.275.749.749 0 01-.734-.215L8 9.06l-3.22 3.22a.751.751 0 01-1.042-.018.751.751 0 01-.018-1.042L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/></svg>';
+      close.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeTab(file.name);
+      });
+      tab.appendChild(close);
+    }
+
+    tab.addEventListener('click', () => switchTab(file.name));
+    tabBar.insertBefore(tab, tabAdd);
+  }
+}
+
+function switchTab(name) {
+  const current = getFile(activeTab);
+  if (current) current.content = editor.value;
+
+  activeTab = name;
+  const file = getFile(name);
+  if (file) {
+    editor.value = file.content;
+    updateLineNumbers();
+  }
+  renderTabs();
+}
+
+function addTab() {
+  const name = prompt('File path (e.g. shared/my-tools.md):');
+  if (!name || !name.trim()) return;
+
+  const trimmed = name.trim();
+  if (getFile(trimmed)) { switchTab(trimmed); return; }
+
+  const defaultImportContent = `---
+# Shared workflow component
+# This file can define: tools, steps, engine, mcp-servers, etc.
+tools:
+  - name: example_tool
+    description: An example tool
+---
+
+# Instructions
+
+Add your shared workflow instructions here.
+`;
+
+  files.push({ name: trimmed, content: defaultImportContent });
+  switchTab(trimmed);
+}
+
+function removeTab(name) {
+  if (name === MAIN_FILE) return;
+  files = files.filter(f => f.name !== name);
+  if (activeTab === name) {
+    switchTab(MAIN_FILE);
+  } else {
+    renderTabs();
+  }
+  if (autoCompile && isReady) scheduleCompile();
+}
+
+tabAdd.addEventListener('click', addTab);
+
+// ---------------------------------------------------------------
 // Editor setup
 // ---------------------------------------------------------------
 editor.value = DEFAULT_CONTENT;
 updateLineNumbers();
+renderTabs();
 
 editor.addEventListener('input', () => {
   updateLineNumbers();
+  const file = getFile(activeTab);
+  if (file) file.content = editor.value;
   if (autoCompile && isReady) scheduleCompile();
 });
 
@@ -160,11 +256,25 @@ function scheduleCompile() {
   compileTimer = setTimeout(doCompile, 400);
 }
 
+function getImportFiles() {
+  const importFiles = {};
+  for (const file of files) {
+    if (file.name !== MAIN_FILE) importFiles[file.name] = file.content;
+  }
+  return Object.keys(importFiles).length > 0 ? importFiles : undefined;
+}
+
 async function doCompile() {
   if (!isReady || isCompiling) return;
   if (compileTimer) { clearTimeout(compileTimer); compileTimer = null; }
 
-  const md = editor.value;
+  // Save current editor content
+  const currentFile = getFile(activeTab);
+  if (currentFile) currentFile.content = editor.value;
+
+  // Get the main workflow content
+  const mainFile = getFile(MAIN_FILE);
+  const md = mainFile ? mainFile.content : '';
   if (!md.trim()) {
     outputPre.style.display = 'none';
     outputPlaceholder.style.display = 'flex';
@@ -181,7 +291,8 @@ async function doCompile() {
   warningBanner.classList.remove('visible');
 
   try {
-    const result = await compiler.compile(md);
+    const importFiles = getImportFiles();
+    const result = await compiler.compile(md, importFiles);
 
     if (result.error) {
       setStatus('error', 'Error');
