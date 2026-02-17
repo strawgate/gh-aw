@@ -20,33 +20,43 @@ func TestParseRemoteOrigin(t *testing.T) {
 		expected *remoteImportOrigin
 	}{
 		{
-			name: "basic workflowspec with ref and deep base path",
-			spec: "elastic/ai-github-actions/gh-agent-workflows/mention-in-pr/rwxp.md@main",
+			name: "deep path extracts parent directory as base path",
+			spec: "githubnext/agentics/workflows/shared/reporting.md@main",
 			expected: &remoteImportOrigin{
-				Owner:    "elastic",
-				Repo:     "ai-github-actions",
+				Owner:    "githubnext",
+				Repo:     "agentics",
 				Ref:      "main",
-				BasePath: "gh-agent-workflows",
+				BasePath: "workflows/shared",
 			},
 		},
 		{
-			name: "workflowspec with SHA ref and deep base path",
-			spec: "elastic/ai-github-actions/gh-agent-workflows/mention-in-pr/rwxp.md@160c33700227b5472dc3a08aeea1e774389a1a84",
+			name: "workflowspec with SHA ref",
+			spec: "githubnext/agentics/workflows/shared/reporting.md@acea14d65af123c315230221b409f4f435b3706f",
 			expected: &remoteImportOrigin{
-				Owner:    "elastic",
-				Repo:     "ai-github-actions",
-				Ref:      "160c33700227b5472dc3a08aeea1e774389a1a84",
-				BasePath: "gh-agent-workflows",
+				Owner:    "githubnext",
+				Repo:     "agentics",
+				Ref:      "acea14d65af123c315230221b409f4f435b3706f",
+				BasePath: "workflows/shared",
 			},
 		},
 		{
-			name: "workflowspec without ref defaults to main, 2-level path has empty base",
-			spec: "elastic/ai-github-actions/gh-agent-workflows/file.md",
+			name: "2-level path extracts directory as base path",
+			spec: "githubnext/agentics/workflows/code-simplifier.md@main",
 			expected: &remoteImportOrigin{
-				Owner:    "elastic",
-				Repo:     "ai-github-actions",
+				Owner:    "githubnext",
+				Repo:     "agentics",
 				Ref:      "main",
-				BasePath: "",
+				BasePath: "workflows",
+			},
+		},
+		{
+			name: "workflowspec without ref defaults to main",
+			spec: "githubnext/agentics/workflows/code-simplifier.md",
+			expected: &remoteImportOrigin{
+				Owner:    "githubnext",
+				Repo:     "agentics",
+				Ref:      "main",
+				BasePath: "workflows",
 			},
 		},
 		{
@@ -56,15 +66,15 @@ func TestParseRemoteOrigin(t *testing.T) {
 				Owner:    "owner",
 				Repo:     "repo",
 				Ref:      "v1.0",
-				BasePath: "",
+				BasePath: "path",
 			},
 		},
 		{
 			name: "workflowspec through .github/workflows",
-			spec: "elastic/ai-github-actions/.github/workflows/gh-aw-workflows/mention-in-pr-rwxp.md@main",
+			spec: "githubnext/agentics/.github/workflows/code-simplifier.md@main",
 			expected: &remoteImportOrigin{
-				Owner:    "elastic",
-				Repo:     "ai-github-actions",
+				Owner:    "githubnext",
+				Repo:     "agentics",
 				Ref:      "main",
 				BasePath: ".github/workflows",
 			},
@@ -76,7 +86,7 @@ func TestParseRemoteOrigin(t *testing.T) {
 				Owner:    "org",
 				Repo:     "repo",
 				Ref:      "v2.0",
-				BasePath: "a/b/c",
+				BasePath: "a/b/c/dir",
 			},
 		},
 		{
@@ -128,19 +138,19 @@ func TestFormatWorkflowSpec(t *testing.T) {
 	}{
 		{
 			name:     "basic spec with branch ref",
-			owner:    "elastic",
-			repo:     "ai-github-actions",
-			filePath: "gh-agent-workflows/file.md",
+			owner:    "githubnext",
+			repo:     "agentics",
+			filePath: "workflows/code-simplifier.md",
 			ref:      "main",
-			expected: "elastic/ai-github-actions/gh-agent-workflows/file.md@main",
+			expected: "githubnext/agentics/workflows/code-simplifier.md@main",
 		},
 		{
 			name:     "spec with SHA ref",
-			owner:    "elastic",
-			repo:     "ai-github-actions",
-			filePath: "gh-agent-workflows/gh-aw-fragments/tools.md",
-			ref:      "160c33700227b5472dc3a08aeea1e774389a1a84",
-			expected: "elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/tools.md@160c33700227b5472dc3a08aeea1e774389a1a84",
+			owner:    "githubnext",
+			repo:     "agentics",
+			filePath: "workflows/shared/reporting.md",
+			ref:      "acea14d65af123c315230221b409f4f435b3706f",
+			expected: "githubnext/agentics/workflows/shared/reporting.md@acea14d65af123c315230221b409f4f435b3706f",
 		},
 		{
 			name:     "spec with tag ref",
@@ -184,8 +194,8 @@ func TestRemoteImportOriginString(t *testing.T) {
 	}{
 		{
 			name:     "basic origin",
-			origin:   &remoteImportOrigin{Owner: "elastic", Repo: "ai-github-actions", Ref: "main"},
-			expected: "elastic/ai-github-actions@main",
+			origin:   &remoteImportOrigin{Owner: "githubnext", Repo: "agentics", Ref: "main"},
+			expected: "githubnext/agentics@main",
 		},
 		{
 			name:     "origin with SHA",
@@ -215,20 +225,20 @@ func TestResolveNestedImport(t *testing.T) {
 		expected     string
 	}{
 		{
-			name: "resolves relative to non-empty base path",
+			name: "resolves sibling file in same directory",
 			origin: &remoteImportOrigin{
-				Owner: "elastic", Repo: "ai-github-actions", Ref: "main", BasePath: "gh-agent-workflows",
+				Owner: "githubnext", Repo: "agentics", Ref: "main", BasePath: "workflows",
 			},
-			relativePath: "gh-aw-fragments/tools.md",
-			expected:     "elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/tools.md@main",
+			relativePath: "shared/reporting.md",
+			expected:     "githubnext/agentics/workflows/shared/reporting.md@main",
 		},
 		{
 			name: "resolves relative to .github/workflows base path",
 			origin: &remoteImportOrigin{
-				Owner: "elastic", Repo: "ai-github-actions", Ref: "main", BasePath: ".github/workflows",
+				Owner: "githubnext", Repo: "agentics", Ref: "main", BasePath: ".github/workflows",
 			},
-			relativePath: "gh-aw-fragments/tools.md",
-			expected:     "elastic/ai-github-actions/.github/workflows/gh-aw-fragments/tools.md@main",
+			relativePath: "shared/reporting.md",
+			expected:     "githubnext/agentics/.github/workflows/shared/reporting.md@main",
 		},
 		{
 			name: "resolves with empty base path at repo root",
@@ -249,11 +259,11 @@ func TestResolveNestedImport(t *testing.T) {
 		{
 			name: "preserves SHA ref",
 			origin: &remoteImportOrigin{
-				Owner: "elastic", Repo: "ai-github-actions",
-				Ref: "160c33700227b5472dc3a08aeea1e774389a1a84", BasePath: "gh-agent-workflows",
+				Owner: "githubnext", Repo: "agentics",
+				Ref: "acea14d65af123c315230221b409f4f435b3706f", BasePath: "workflows",
 			},
-			relativePath: "gh-aw-fragments/formatting.md",
-			expected:     "elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/formatting.md@160c33700227b5472dc3a08aeea1e774389a1a84",
+			relativePath: "shared/reporting.md",
+			expected:     "githubnext/agentics/workflows/shared/reporting.md@acea14d65af123c315230221b409f4f435b3706f",
 		},
 		{
 			name: "multi-level base path",
@@ -266,10 +276,26 @@ func TestResolveNestedImport(t *testing.T) {
 		{
 			name: "single file without subdirectory",
 			origin: &remoteImportOrigin{
-				Owner: "org", Repo: "repo", Ref: "main", BasePath: "base",
+				Owner: "org", Repo: "repo", Ref: "main", BasePath: "workflows",
 			},
 			relativePath: "file.md",
-			expected:     "org/repo/base/file.md@main",
+			expected:     "org/repo/workflows/file.md@main",
+		},
+		{
+			name: "parent traversal with ../ resolves correctly",
+			origin: &remoteImportOrigin{
+				Owner: "org", Repo: "repo", Ref: "main", BasePath: "base/subdir",
+			},
+			relativePath: "../sibling/file.md",
+			expected:     "org/repo/base/sibling/file.md@main",
+		},
+		{
+			name: "double parent traversal ../../ resolves correctly",
+			origin: &remoteImportOrigin{
+				Owner: "org", Repo: "repo", Ref: "main", BasePath: "a/b/c",
+			},
+			relativePath: "../../other/file.md",
+			expected:     "org/repo/a/other/file.md@main",
 		},
 	}
 
@@ -323,15 +349,15 @@ func TestRemoteOriginPropagation(t *testing.T) {
 	}
 
 	t.Run("workflowspec import gets remote origin with base path", func(t *testing.T) {
-		spec := "elastic/ai-github-actions/gh-agent-workflows/mention-in-pr/rwxp.md@main"
+		spec := "githubnext/agentics/workflows/shared/reporting.md@main"
 		assert.True(t, isWorkflowSpec(spec), "Should be recognized as workflowspec")
 
 		origin := parseRemoteOrigin(spec)
 		require.NotNil(t, origin, "Should parse remote origin")
-		assert.Equal(t, "elastic", origin.Owner, "Owner should be elastic")
-		assert.Equal(t, "ai-github-actions", origin.Repo, "Repo should be ai-github-actions")
+		assert.Equal(t, "githubnext", origin.Owner, "Owner should be githubnext")
+		assert.Equal(t, "agentics", origin.Repo, "Repo should be agentics")
 		assert.Equal(t, "main", origin.Ref, "Ref should be main")
-		assert.Equal(t, "gh-agent-workflows", origin.BasePath, "BasePath should be gh-agent-workflows")
+		assert.Equal(t, "workflows/shared", origin.BasePath, "BasePath should be workflows/shared")
 	})
 
 	t.Run("local import does not get remote origin", func(t *testing.T) {
@@ -342,38 +368,38 @@ func TestRemoteOriginPropagation(t *testing.T) {
 		assert.Nil(t, origin, "Local paths should not produce remote origin")
 	})
 
-	t.Run("nested import resolves relative to parent base path (gh-agent-workflows)", func(t *testing.T) {
+	t.Run("nested import resolves relative to parent directory", func(t *testing.T) {
 		origin := &remoteImportOrigin{
-			Owner:    "elastic",
-			Repo:     "ai-github-actions",
+			Owner:    "githubnext",
+			Repo:     "agentics",
 			Ref:      "main",
-			BasePath: "gh-agent-workflows",
+			BasePath: "workflows",
 		}
-		nestedPath := "gh-aw-fragments/elastic-tools.md"
+		nestedPath := "shared/reporting.md"
 
 		resolvedSpec := resolveNested(origin, nestedPath)
 
 		assert.Equal(t,
-			"elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/elastic-tools.md@main",
+			"githubnext/agentics/workflows/shared/reporting.md@main",
 			resolvedSpec,
-			"Nested import should resolve relative to parent's base path",
+			"Nested import should resolve relative to parent's directory",
 		)
 		assert.True(t, isWorkflowSpec(resolvedSpec), "Constructed path should be a valid workflowspec")
 	})
 
 	t.Run("nested import resolves relative to .github/workflows base path", func(t *testing.T) {
 		origin := &remoteImportOrigin{
-			Owner:    "elastic",
-			Repo:     "ai-github-actions",
+			Owner:    "githubnext",
+			Repo:     "agentics",
 			Ref:      "main",
 			BasePath: ".github/workflows",
 		}
-		nestedPath := "gh-aw-fragments/elastic-tools.md"
+		nestedPath := "shared/reporting.md"
 
 		resolvedSpec := resolveNested(origin, nestedPath)
 
 		assert.Equal(t,
-			"elastic/ai-github-actions/.github/workflows/gh-aw-fragments/elastic-tools.md@main",
+			"githubnext/agentics/.github/workflows/shared/reporting.md@main",
 			resolvedSpec,
 			"Nested import should resolve relative to .github/workflows/ base path",
 		)
@@ -417,6 +443,25 @@ func TestRemoteOriginPropagation(t *testing.T) {
 		)
 	})
 
+	t.Run("nested ../ traversal resolves to sibling directory", func(t *testing.T) {
+		origin := &remoteImportOrigin{
+			Owner:    "org",
+			Repo:     "repo",
+			Ref:      "main",
+			BasePath: "base/subdir",
+		}
+		nestedPath := "../fragments/tools.md"
+
+		resolvedSpec := resolveNested(origin, nestedPath)
+
+		assert.Equal(t,
+			"org/repo/base/fragments/tools.md@main",
+			resolvedSpec,
+			"../ should traverse up from base path to resolve sibling directory",
+		)
+		assert.True(t, isWorkflowSpec(resolvedSpec), "Constructed path should be a valid workflowspec")
+	})
+
 	t.Run("nested workflowspec from remote parent gets its own origin", func(t *testing.T) {
 		// If a remote file references another workflowspec, it should
 		// get its own origin, not inherit the parent's
@@ -441,49 +486,49 @@ func TestRemoteOriginPropagation(t *testing.T) {
 	})
 
 	t.Run("SHA ref is preserved in nested resolution", func(t *testing.T) {
-		sha := "160c33700227b5472dc3a08aeea1e774389a1a84"
+		sha := "acea14d65af123c315230221b409f4f435b3706f"
 		origin := &remoteImportOrigin{
-			Owner:    "elastic",
-			Repo:     "ai-github-actions",
+			Owner:    "githubnext",
+			Repo:     "agentics",
 			Ref:      sha,
-			BasePath: "gh-agent-workflows",
+			BasePath: "workflows",
 		}
-		nestedPath := "gh-aw-fragments/formatting.md"
+		nestedPath := "shared/reporting.md"
 
 		resolvedSpec := resolveNested(origin, nestedPath)
 
 		assert.Equal(t,
-			"elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/formatting.md@"+sha,
+			"githubnext/agentics/workflows/shared/reporting.md@"+sha,
 			resolvedSpec,
 			"SHA ref should be preserved for nested imports",
 		)
 	})
 
 	t.Run("base path consistency between parent and nested imports", func(t *testing.T) {
-		// When the shim imports through gh-agent-workflows/, nested imports
-		// should also resolve through gh-agent-workflows/, not .github/workflows/
-		parentSpec := "elastic/ai-github-actions/gh-agent-workflows/gh-aw-workflows/test-improvement-rwxp.md@abc123"
+		// When importing through workflows/, nested imports
+		// should also resolve through workflows/
+		parentSpec := "githubnext/agentics/workflows/code-simplifier.md@abc123"
 		parentOrigin := parseRemoteOrigin(parentSpec)
 		require.NotNil(t, parentOrigin)
-		assert.Equal(t, "gh-agent-workflows", parentOrigin.BasePath)
+		assert.Equal(t, "workflows", parentOrigin.BasePath)
 
-		// Nested fragment import should use the same base
-		nestedSpec := resolveNested(parentOrigin, "gh-aw-fragments/elastic-tools.md")
+		// Nested import should use the same base
+		nestedSpec := resolveNested(parentOrigin, "shared/reporting.md")
 		assert.Equal(t,
-			"elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/elastic-tools.md@abc123",
+			"githubnext/agentics/workflows/shared/reporting.md@abc123",
 			nestedSpec,
 			"Nested import should be consistent with parent's base path",
 		)
 
 		// Compare: if the same import goes through .github/workflows/
-		altSpec := "elastic/ai-github-actions/.github/workflows/gh-aw-workflows/test-improvement-rwxp.md@abc123"
+		altSpec := "githubnext/agentics/.github/workflows/code-simplifier.md@abc123"
 		altOrigin := parseRemoteOrigin(altSpec)
 		require.NotNil(t, altOrigin)
 		assert.Equal(t, ".github/workflows", altOrigin.BasePath)
 
-		altNestedSpec := resolveNested(altOrigin, "gh-aw-fragments/elastic-tools.md")
+		altNestedSpec := resolveNested(altOrigin, "shared/reporting.md")
 		assert.Equal(t,
-			"elastic/ai-github-actions/.github/workflows/gh-aw-fragments/elastic-tools.md@abc123",
+			"githubnext/agentics/.github/workflows/shared/reporting.md@abc123",
 			altNestedSpec,
 			"Nested import through .github/workflows should also be consistent",
 		)
@@ -506,20 +551,20 @@ func TestImportQueueItemRemoteOriginField(t *testing.T) {
 
 	t.Run("queue item with remote origin", func(t *testing.T) {
 		origin := &remoteImportOrigin{
-			Owner: "elastic",
-			Repo:  "ai-github-actions",
+			Owner: "githubnext",
+			Repo:  "agentics",
 			Ref:   "main",
 		}
 		item := importQueueItem{
-			importPath:   "elastic/ai-github-actions/path/file.md@main",
+			importPath:   "githubnext/agentics/workflows/file.md@main",
 			fullPath:     "/tmp/cache/file.md",
 			sectionName:  "",
 			baseDir:      "/workspace/.github/workflows",
 			remoteOrigin: origin,
 		}
 		require.NotNil(t, item.remoteOrigin, "Remote import should have non-nil remote origin")
-		assert.Equal(t, "elastic", item.remoteOrigin.Owner, "Owner should match")
-		assert.Equal(t, "ai-github-actions", item.remoteOrigin.Repo, "Repo should match")
+		assert.Equal(t, "githubnext", item.remoteOrigin.Owner, "Owner should match")
+		assert.Equal(t, "agentics", item.remoteOrigin.Repo, "Repo should match")
 		assert.Equal(t, "main", item.remoteOrigin.Ref, "Ref should match")
 	})
 }
@@ -582,24 +627,24 @@ func TestResolveRemoteSymlinksPathConstruction(t *testing.T) {
 
 	t.Run("symlink target resolution logic", func(t *testing.T) {
 		// Verify the path math that resolveRemoteSymlinks performs internally.
-		// Given a symlink at .github/workflows/shared -> ../../gh-agent-workflows/shared,
-		// the resolution should produce gh-agent-workflows/shared/file.md
+		// Given a symlink at .github/workflows/shared -> ../../workflows/shared,
+		// the resolution should produce workflows/shared/file.md
 
-		// Simulate: parts = [".github", "workflows", "shared", "elastic-tools.md"]
+		// Simulate: parts = [".github", "workflows", "shared", "reporting.md"]
 		// Symlink at index 3 (parts[:3] = ".github/workflows/shared")
-		// Target: "../../gh-agent-workflows/shared"
+		// Target: "../../workflows/shared"
 		// Parent: ".github/workflows"
 
 		parentDir := ".github/workflows"
-		target := "../../gh-agent-workflows/shared"
+		target := "../../workflows/shared"
 
 		// This mirrors the logic in resolveRemoteSymlinks using path.Clean/path.Join
 		resolvedBase := path.Clean(path.Join(parentDir, target))
-		remaining := "elastic-tools.md"
+		remaining := "reporting.md"
 		resolvedPath := resolvedBase + "/" + remaining
 
-		assert.Equal(t, "gh-agent-workflows/shared/elastic-tools.md", resolvedPath,
-			"Symlink at .github/workflows/shared pointing to ../../gh-agent-workflows/shared should resolve correctly")
+		assert.Equal(t, "workflows/shared/reporting.md", resolvedPath,
+			"Symlink at .github/workflows/shared pointing to ../../workflows/shared should resolve correctly")
 	})
 
 	t.Run("symlink at first component", func(t *testing.T) {
@@ -618,19 +663,19 @@ func TestResolveRemoteSymlinksPathConstruction(t *testing.T) {
 	})
 
 	t.Run("nested symlink resolution", func(t *testing.T) {
-		// Simulate: parts = ["gh-agent-workflows", "gh-aw-workflows", "file.md"]
-		// Symlink at index 2 (parts[:2] = "gh-agent-workflows/gh-aw-workflows")
-		// Target: "../.github/workflows/gh-aw-workflows"
-		// Parent: "gh-agent-workflows"
+		// Simulate: parts = ["workflows", "nested", "file.md"]
+		// Symlink at index 2 (parts[:2] = "workflows/nested")
+		// Target: "../.github/workflows/nested"
+		// Parent: "workflows"
 
-		parentDir := "gh-agent-workflows"
-		target := "../.github/workflows/gh-aw-workflows"
+		parentDir := "workflows"
+		target := "../.github/workflows/nested"
 
 		resolvedBase := path.Clean(path.Join(parentDir, target))
 		remaining := "file.md"
 		resolvedPath := resolvedBase + "/" + remaining
 
-		assert.Equal(t, ".github/workflows/gh-aw-workflows/file.md", resolvedPath,
+		assert.Equal(t, ".github/workflows/nested/file.md", resolvedPath,
 			"Nested symlink with ../ target should resolve correctly")
 	})
 }

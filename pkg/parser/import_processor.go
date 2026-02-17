@@ -117,26 +117,30 @@ func (o *remoteImportOrigin) String() string {
 }
 
 // ResolveNestedImport constructs a full workflowspec for a relative import path
-// resolved against this origin's base path. The relative path is cleaned (e.g.,
-// "./" prefix stripped) and combined with the origin's owner, repo, base path,
-// and ref to produce a valid workflowspec string.
+// resolved against this origin's base path (the parent directory of the importing
+// file). The relative path may use "../" to traverse up from the base path,
+// following standard relative path semantics.
 //
 // Examples:
 //
-//	origin{Owner:"elastic", Repo:"ai-github-actions", Ref:"main", BasePath:"gh-agent-workflows"}
-//	  .ResolveNestedImport("gh-aw-fragments/tools.md")
+//	origin{BasePath:"gh-agent-workflows/gh-aw-workflows"}
+//	  .ResolveNestedImport("../gh-aw-fragments/tools.md")
 //	  → "elastic/ai-github-actions/gh-agent-workflows/gh-aw-fragments/tools.md@main"
 //
-//	origin{Owner:"org", Repo:"repo", Ref:"v1.0", BasePath:""}
+//	origin{BasePath:"workflows"}
+//	  .ResolveNestedImport("shared/reporting.md")
+//	  → "org/repo/workflows/shared/reporting.md@main"
+//
+//	origin{BasePath:""}
 //	  .ResolveNestedImport("dir/file.md")
 //	  → "org/repo/dir/file.md@v1.0"
 func (o *remoteImportOrigin) ResolveNestedImport(relativePath string) string {
-	cleanPath := path.Clean(strings.TrimPrefix(relativePath, "./"))
+	cleanRelative := path.Clean(strings.TrimPrefix(relativePath, "./"))
 	var fullPath string
 	if o.BasePath != "" {
-		fullPath = o.BasePath + "/" + cleanPath
+		fullPath = path.Clean(o.BasePath + "/" + cleanRelative)
 	} else {
-		fullPath = cleanPath
+		fullPath = cleanRelative
 	}
 	return FormatWorkflowSpec(o.Owner, o.Repo, fullPath, o.Ref)
 }
@@ -155,21 +159,23 @@ type importQueueItem struct {
 // Returns nil if the path is not a valid workflowspec.
 // Format: owner/repo/path[@ref] where ref defaults to "main" if not specified.
 //
-// BasePath is the directory prefix between owner/repo/ and the final path components.
-// It is extracted by removing the last 2 components (dir/file.md) from the repo-relative
-// path when there are more than 2 components. Workflowspecs can have varying depths:
+// BasePath is the parent directory of the file within the repository. It is
+// extracted by removing the last component (the filename) from the repo-relative
+// path. Nested imports are resolved relative to this directory, following
+// standard relative path semantics (including "../" traversal).
 //
-//	4+ components after owner/repo → BasePath = everything before the last 2:
-//	  "elastic/repo/gh-agent-workflows/gh-aw-workflows/file.md@sha"
-//	    → BasePath = "gh-agent-workflows"
-//	  "elastic/repo/.github/workflows/gh-aw-workflows/file.md@sha"
-//	    → BasePath = ".github/workflows"
+// Examples:
 //
-//	Exactly 2 components after owner/repo → BasePath = "" (empty):
-//	  "elastic/repo/dir/file.md@sha" → BasePath = ""
+//	"owner/repo/workflows/code-simplifier.md@main"
+//	  → BasePath = "workflows"
+//	  → import "shared/reporting.md" resolves to "workflows/shared/reporting.md"
 //
-//	Exactly 1 component after owner/repo → BasePath = "" (empty):
-//	  "elastic/repo/file.md@sha" → BasePath = ""
+//	"elastic/repo/gh-agent-workflows/gh-aw-workflows/file.md@sha"
+//	  → BasePath = "gh-agent-workflows/gh-aw-workflows"
+//	  → import "../gh-aw-fragments/tools.md" resolves to "gh-agent-workflows/gh-aw-fragments/tools.md"
+//
+//	"owner/repo/file.md@sha"
+//	  → BasePath = "" (file at repo root)
 func parseRemoteOrigin(spec string) *remoteImportOrigin {
 	// Remove section reference if present
 	cleanSpec := spec
@@ -191,14 +197,14 @@ func parseRemoteOrigin(spec string) *remoteImportOrigin {
 		return nil
 	}
 
-	// Extract base path: everything between owner/repo/ and the last 2 path components.
-	// When there are more than 2 components after owner/repo, the prefix before the
-	// last 2 is the base path. For "owner/repo/base/dir/file.md", base = "base".
-	// When there are 2 or fewer, the base path is empty.
+	// Extract base path: the parent directory of the file within the repo.
+	// Remove only the last component (the filename) to get the directory path.
+	// For "owner/repo/dir/file.md", basePath = "dir".
+	// For "owner/repo/file.md", basePath = "" (file is at repo root).
 	repoPathParts := slashParts[2:] // everything after owner/repo
 	var basePath string
-	if len(repoPathParts) > 2 {
-		basePath = strings.Join(repoPathParts[:len(repoPathParts)-2], "/")
+	if len(repoPathParts) > 1 {
+		basePath = strings.Join(repoPathParts[:len(repoPathParts)-1], "/")
 	}
 
 	return &remoteImportOrigin{
