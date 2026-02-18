@@ -303,6 +303,9 @@ const (
 
 	// CopilotSDKLLMGatewayPort is the port for the Copilot SDK LLM gateway
 	CopilotSDKLLMGatewayPort = 10002
+
+	// CopilotLLMGatewayPort is the port for the Copilot LLM gateway
+	CopilotLLMGatewayPort = 10002
 )
 
 // DefaultMCPRegistryURL is the default MCP registry URL.
@@ -377,7 +380,7 @@ const DefaultCodexVersion Version = "0.101.0"
 const DefaultGitHubMCPServerVersion Version = "v0.30.3"
 
 // DefaultFirewallVersion is the default version of the gh-aw-firewall (AWF) binary
-const DefaultFirewallVersion Version = "v0.19.1"
+const DefaultFirewallVersion Version = "v0.20.0"
 
 // AWF (Agentic Workflow Firewall) constants
 
@@ -752,9 +755,9 @@ type SystemSecretSpec struct {
 var SystemSecrets = []SystemSecretSpec{
 	{
 		Name:        "GH_AW_GITHUB_TOKEN",
-		WhenNeeded:  "Cross-repo Project Ops / remote GitHub tools",
-		Description: "Fine-grained or classic PAT with contents/issues/pull-requests read+write on the repos gh-aw will touch.",
-		Optional:    false,
+		WhenNeeded:  "Enables the use of a user identity for GitHub write operations (instead of github-actions identity); may enable cross-repo project ops; may permit use of remote GitHub MCP tools",
+		Description: "Fine-grained or classic PAT with contents/issues/pull-requests read+write and other necessary permissions on the repos gh-aw will read or write.",
+		Optional:    true,
 	},
 	{
 		Name:        "GH_AW_AGENT_TOKEN",
