@@ -1422,6 +1422,13 @@ add-comment:
   allowed-repos: [...]
 ```
 
+**Submit PR Review Extensions**:
+```yaml
+submit-pull-request-review:
+  target: "triggering" | "*" | <PR number>   # Required when not in pull_request trigger
+  footer: "always" | "none" | "if-body"     # Footer on review body
+```
+
 **Pull Request Extensions**:
 ```yaml
 create-pull-request:
@@ -2317,6 +2324,7 @@ This section provides complete definitions for all remaining safe output types. 
 **Notes**:
 - Submits all buffered review comments from `create_pull_request_review_comment`
 - Review status affects PR merge requirements
+- **Target**: `target` accepts `"triggering"` (default), `"*"` (use `pull_request_number` from message), or an explicit PR number (e.g. `${{ github.event.inputs.pr_number }}`). Required when the workflow is not triggered by a pull request (e.g. `workflow_dispatch`).
 - Footer control: `footer` accepts `"always"` (default), `"none"`, or `"if-body"` (only when review body has text); boolean `true`/`false` maps to `"always"`/`"none"`
 
 ---

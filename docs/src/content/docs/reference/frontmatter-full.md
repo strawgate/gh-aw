@@ -2700,6 +2700,11 @@ safe-outputs:
     # (optional)
     max: 1
 
+    # Target PR for the review: 'triggering' (default), '*' (any PR), or explicit PR number.
+    # Required when workflow is not triggered by a pull request (e.g. workflow_dispatch).
+    # (optional)
+    target: "triggering"
+
     # Controls whether AI-generated footer is added to the review body. When false,
     # the footer is omitted. Defaults to true.
     # (optional)
