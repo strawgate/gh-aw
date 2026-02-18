@@ -655,7 +655,9 @@ func (c *Compiler) buildActivationJob(data *WorkflowData, preActivationJobCreate
 
 	// Generate prompt in the activation job (before agent job runs)
 	compilerActivationJobsLog.Print("Generating prompt in activation job")
-	c.generatePromptInActivationJob(&steps, data)
+	if err := c.generatePromptInActivationJob(&steps, data); err != nil {
+		return nil, fmt.Errorf("generating prompt in activation job: %w", err)
+	}
 
 	// Upload prompt.txt as an artifact for the agent job to download
 	compilerActivationJobsLog.Print("Adding prompt artifact upload step")
@@ -944,20 +946,23 @@ func (c *Compiler) buildMainJob(data *WorkflowData, activationJobCreated bool) (
 
 // generatePromptInActivationJob generates the prompt creation steps and adds them to the activation job
 // This creates the prompt.txt file that will be uploaded as an artifact and downloaded by the agent job
-func (c *Compiler) generatePromptInActivationJob(steps *[]string, data *WorkflowData) {
+func (c *Compiler) generatePromptInActivationJob(steps *[]string, data *WorkflowData) error {
 	compilerActivationJobsLog.Print("Generating prompt steps in activation job")
 
 	// Use a string builder to collect the YAML
 	var yaml strings.Builder
 
 	// Call the existing generatePrompt method to get all the prompt steps
-	c.generatePrompt(&yaml, data)
+	if err := c.generatePrompt(&yaml, data); err != nil {
+		return err
+	}
 
 	// Append the generated YAML content as a single string to steps
 	yamlContent := yaml.String()
 	*steps = append(*steps, yamlContent)
 
 	compilerActivationJobsLog.Print("Prompt generation steps added to activation job")
+	return nil
 }
 
 // generateCheckoutGitHubFolderForActivation generates the checkout step for .github and .agents folders

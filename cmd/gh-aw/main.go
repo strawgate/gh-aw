@@ -265,6 +265,7 @@ Examples:
 		fix, _ := cmd.Flags().GetBool("fix")
 		stats, _ := cmd.Flags().GetBool("stats")
 		failFast, _ := cmd.Flags().GetBool("fail-fast")
+		inlinePrompt, _ := cmd.Flags().GetBool("inline-prompt")
 		noCheckUpdate, _ := cmd.Flags().GetBool("no-check-update")
 		verbose, _ := cmd.Flags().GetBool("verbose")
 		if err := validateEngine(engineOverride); err != nil {
@@ -317,6 +318,7 @@ Examples:
 			JSONOutput:             jsonOutput,
 			Stats:                  stats,
 			FailFast:               failFast,
+			InlinePrompt:           inlinePrompt,
 		}
 		if _, err := cli.CompileWorkflows(cmd.Context(), config); err != nil {
 			// Return error as-is without additional formatting
@@ -558,6 +560,7 @@ Use "` + string(constants.CLIExtensionPrefix) + ` help all" to show help for all
 	compileCmd.Flags().BoolP("json", "j", false, "Output results in JSON format")
 	compileCmd.Flags().Bool("stats", false, "Display statistics table sorted by file size (shows jobs, steps, scripts, and shells)")
 	compileCmd.Flags().Bool("fail-fast", false, "Stop at the first validation error instead of collecting all errors")
+	compileCmd.Flags().Bool("inline-prompt", false, "Inline all markdown content directly in compiled YAML instead of using runtime-import macros")
 	compileCmd.Flags().Bool("no-check-update", false, "Skip checking for gh-aw updates")
 	compileCmd.MarkFlagsMutuallyExclusive("dir", "workflows-dir")
 

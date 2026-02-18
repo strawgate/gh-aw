@@ -5,6 +5,8 @@ package workflow
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMissingToolSafeOutput(t *testing.T) {
@@ -148,7 +150,8 @@ func TestGeneratePromptIncludesGitHubAWPrompt(t *testing.T) {
 	}
 
 	var yaml strings.Builder
-	compiler.generatePrompt(&yaml, data)
+	err := compiler.generatePrompt(&yaml, data)
+	require.NoError(t, err, "generatePrompt should not return an error")
 
 	output := yaml.String()
 
@@ -175,7 +178,8 @@ func TestMissingToolPromptGeneration(t *testing.T) {
 	}
 
 	var yaml strings.Builder
-	compiler.generatePrompt(&yaml, data)
+	err := compiler.generatePrompt(&yaml, data)
+	require.NoError(t, err, "generatePrompt should not return an error")
 
 	output := yaml.String()
 

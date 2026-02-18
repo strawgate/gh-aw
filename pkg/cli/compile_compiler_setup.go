@@ -91,11 +91,15 @@ func createAndConfigureCompiler(config CompileConfig) *workflow.Compiler {
 
 	// Create compiler with auto-detected version and action mode
 	// Git root is now auto-detected in NewCompiler() for all compiler instances
-	compiler := workflow.NewCompiler(
+	compilerOpts := []workflow.CompilerOption{
 		workflow.WithVerbose(config.Verbose),
 		workflow.WithEngineOverride(config.EngineOverride),
 		workflow.WithFailFast(config.FailFast),
-	)
+	}
+	if config.InlinePrompt {
+		compilerOpts = append(compilerOpts, workflow.WithInlinePrompt(true))
+	}
+	compiler := workflow.NewCompiler(compilerOpts...)
 	compileCompilerSetupLog.Print("Created compiler instance")
 
 	// Configure compiler flags

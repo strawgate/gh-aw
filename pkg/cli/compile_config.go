@@ -33,6 +33,7 @@ type CompileConfig struct {
 	ActionTag              string   // Override action SHA or tag for actions/setup (overrides action-mode to release)
 	Stats                  bool     // Display statistics table sorted by file size
 	FailFast               bool     // Stop at first error instead of collecting all errors
+	InlinePrompt           bool     // Inline all markdown in YAML instead of runtime-import macros
 }
 
 // WorkflowFailure represents a failed workflow with its error count

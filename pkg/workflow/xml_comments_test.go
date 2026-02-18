@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/github/gh-aw/pkg/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRemoveXMLComments(t *testing.T) {
@@ -239,7 +240,8 @@ Final content.`,
 	}
 
 	var yaml strings.Builder
-	compiler.generatePrompt(&yaml, data)
+	err := compiler.generatePrompt(&yaml, data)
+	require.NoError(t, err, "generatePrompt should not return an error")
 
 	output := yaml.String()
 

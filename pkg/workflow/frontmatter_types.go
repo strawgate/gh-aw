@@ -96,7 +96,8 @@ type FrontmatterConfig struct {
 	TrackerID      string   `json:"tracker-id,omitempty"`
 	Version        string   `json:"version,omitempty"`
 	TimeoutMinutes int      `json:"timeout-minutes,omitempty"`
-	Strict         *bool    `json:"strict,omitempty"` // Pointer to distinguish unset from false
+	Strict         *bool    `json:"strict,omitempty"`        // Pointer to distinguish unset from false
+	InlinePrompt   *bool    `json:"inline-prompt,omitempty"` // If true, inline all markdown in YAML instead of runtime-import macros
 	Labels         []string `json:"labels,omitempty"`
 
 	// Configuration sections - using strongly-typed structs
@@ -514,6 +515,9 @@ func (fc *FrontmatterConfig) ToMap() map[string]any {
 	}
 	if fc.Strict != nil {
 		result["strict"] = *fc.Strict
+	}
+	if fc.InlinePrompt != nil {
+		result["inline-prompt"] = *fc.InlinePrompt
 	}
 	if len(fc.Labels) > 0 {
 		result["labels"] = fc.Labels

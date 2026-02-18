@@ -153,7 +153,22 @@ func (c *Compiler) buildInitialWorkflowData(
 		ParsedFrontmatter:     toolsResult.parsedFrontmatter,
 		HasExplicitGitHubTool: toolsResult.hasExplicitGitHubTool,
 		ActionMode:            c.actionMode,
+		InlinePrompt:          c.resolveInlinePrompt(result.Frontmatter),
 	}
+}
+
+// resolveInlinePrompt determines whether to inline all markdown in the compiled YAML.
+// Priority: compiler flag (CLI/Wasm) > frontmatter > default (false)
+func (c *Compiler) resolveInlinePrompt(frontmatter map[string]any) bool {
+	if c.inlinePrompt {
+		return true
+	}
+	if inlineValue, exists := frontmatter["inline-prompt"]; exists {
+		if inlineBool, ok := inlineValue.(bool); ok {
+			return inlineBool
+		}
+	}
+	return false
 }
 
 // extractYAMLSections extracts YAML configuration sections from frontmatter

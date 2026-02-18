@@ -6457,6 +6457,12 @@
         }
       ]
     },
+    "inline-prompt": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, inline all markdown content (including imported fragments) directly in the compiled YAML instead of using runtime-import macros. This is required for reusable workflows (workflow_call) where the calling repository does not have access to the source repository's fragment files at runtime.",
+      "examples": [true, false]
+    },
     "strict": {
       "type": "boolean",
       "default": true,

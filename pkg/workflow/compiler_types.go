@@ -460,6 +460,7 @@ type WorkflowData struct {
 	ActionPinWarnings     map[string]bool      // cache of already-warned action pin failures (key: "repo@version")
 	ActionMode            ActionMode           // action mode for workflow compilation (dev, release, script)
 	HasExplicitGitHubTool bool                 // true if tools.github was explicitly configured in frontmatter
+	InlinePrompt          bool                 // if true, inline all markdown in YAML instead of runtime-import macros
 }
 
 // BaseSafeOutputConfig holds common configuration fields for all safe output types

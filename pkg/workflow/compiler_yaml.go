@@ -3,6 +3,7 @@ package workflow
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -247,7 +248,7 @@ func splitContentIntoChunks(content string) []string {
 	return chunks
 }
 
-func (c *Compiler) generatePrompt(yaml *strings.Builder, data *WorkflowData) {
+func (c *Compiler) generatePrompt(yaml *strings.Builder, data *WorkflowData) error {
 	compilerYamlLog.Printf("Generating prompt for workflow: %s (markdown size: %d bytes)", data.Name, len(data.MarkdownContent))
 
 	// Collect built-in prompt sections (these should be prepended to user prompt)
@@ -294,16 +295,31 @@ func (c *Compiler) generatePrompt(yaml *strings.Builder, data *WorkflowData) {
 		compilerYamlLog.Printf("Inlined imported markdown with inputs in %d chunks", len(importedChunks))
 	}
 
-	// Step 1b: Generate runtime-import macros for imported markdown without inputs
-	// These imports don't need compile-time substitution, so they can be loaded at runtime
+	// Step 1b: Handle imported markdown without inputs
+	// When inline-prompt is enabled, read and inline the content directly;
+	// otherwise emit runtime-import macros for deferred loading.
 	if len(data.ImportPaths) > 0 {
-		compilerYamlLog.Printf("Generating runtime-import macros for %d imports without inputs", len(data.ImportPaths))
-		for _, importPath := range data.ImportPaths {
-			// Normalize to Unix paths (forward slashes) for cross-platform compatibility
-			importPath = filepath.ToSlash(importPath)
-			runtimeImportMacro := fmt.Sprintf("{{#runtime-import %s}}", importPath)
-			userPromptChunks = append(userPromptChunks, runtimeImportMacro)
-			compilerYamlLog.Printf("Added runtime-import macro for: %s", importPath)
+		if data.InlinePrompt {
+			compilerYamlLog.Printf("Inlining %d imported fragments (inline-prompt enabled)", len(data.ImportPaths))
+			for _, importPath := range data.ImportPaths {
+				inlinedContent, err := c.readImportedMarkdown(importPath)
+				if err != nil {
+					return fmt.Errorf("inline-prompt: %w", err)
+				}
+
+				chunks, mappings := processMarkdownForInlining(inlinedContent)
+				userPromptChunks = append(userPromptChunks, chunks...)
+				expressionMappings = append(expressionMappings, mappings...)
+				compilerYamlLog.Printf("Inlined import %s in %d chunks", importPath, len(chunks))
+			}
+		} else {
+			compilerYamlLog.Printf("Generating runtime-import macros for %d imports without inputs", len(data.ImportPaths))
+			for _, importPath := range data.ImportPaths {
+				importPath = filepath.ToSlash(importPath)
+				runtimeImportMacro := fmt.Sprintf("{{#runtime-import %s}}", importPath)
+				userPromptChunks = append(userPromptChunks, runtimeImportMacro)
+				compilerYamlLog.Printf("Added runtime-import macro for: %s", importPath)
+			}
 		}
 	}
 
@@ -313,7 +329,8 @@ func (c *Compiler) generatePrompt(yaml *strings.Builder, data *WorkflowData) {
 	// available at compile time for the substitute placeholders step
 	// Use MainWorkflowMarkdown (not MarkdownContent) to avoid extracting from imported content
 	// Skip this step when inlinePrompt is true because expression extraction happens in Step 2
-	if !c.inlinePrompt && data.MainWorkflowMarkdown != "" {
+	inlinePrompt := c.inlinePrompt || data.InlinePrompt
+	if !inlinePrompt && data.MainWorkflowMarkdown != "" {
 		compilerYamlLog.Printf("Extracting expressions from main workflow markdown (%d bytes)", len(data.MainWorkflowMarkdown))
 
 		// Create a new extractor for main workflow markdown
@@ -327,26 +344,15 @@ func (c *Compiler) generatePrompt(yaml *strings.Builder, data *WorkflowData) {
 	}
 
 	// Step 2: Add main workflow markdown content to the prompt
-	if c.inlinePrompt {
-		// Inline mode (Wasm/browser): embed the markdown content directly in the YAML
+	if inlinePrompt {
+		// Inline mode: embed the markdown content directly in the YAML
 		// since runtime-import macros cannot resolve without filesystem access
 		if data.MainWorkflowMarkdown != "" {
 			compilerYamlLog.Printf("Inlining main workflow markdown (%d bytes)", len(data.MainWorkflowMarkdown))
-
-			inlinedMarkdown := removeXMLComments(data.MainWorkflowMarkdown)
-			inlinedMarkdown = wrapExpressionsInTemplateConditionals(inlinedMarkdown)
-
-			// Extract expressions and replace with env var references
-			inlineExtractor := NewExpressionExtractor()
-			inlineExprMappings, err := inlineExtractor.ExtractExpressions(inlinedMarkdown)
-			if err == nil && len(inlineExprMappings) > 0 {
-				inlinedMarkdown = inlineExtractor.ReplaceExpressionsWithEnvVars(inlinedMarkdown)
-				expressionMappings = append(expressionMappings, inlineExprMappings...)
-			}
-
-			inlinedChunks := splitContentIntoChunks(inlinedMarkdown)
-			userPromptChunks = append(userPromptChunks, inlinedChunks...)
-			compilerYamlLog.Printf("Inlined main workflow markdown in %d chunks", len(inlinedChunks))
+			chunks, mappings := processMarkdownForInlining(data.MainWorkflowMarkdown)
+			userPromptChunks = append(userPromptChunks, chunks...)
+			expressionMappings = append(expressionMappings, mappings...)
+			compilerYamlLog.Printf("Inlined main workflow markdown in %d chunks", len(chunks))
 		}
 	} else {
 		// Normal mode: use runtime-import macro so users can edit without recompilation
@@ -444,6 +450,8 @@ func (c *Compiler) generatePrompt(yaml *strings.Builder, data *WorkflowData) {
 	yaml.WriteString("        env:\n")
 	yaml.WriteString("          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt\n")
 	yaml.WriteString("        run: bash /opt/gh-aw/actions/print_prompt_summary.sh\n")
+
+	return nil
 }
 func (c *Compiler) generatePostSteps(yaml *strings.Builder, data *WorkflowData) {
 	if data.PostSteps != "" {
@@ -711,4 +719,47 @@ func (c *Compiler) generateOutputCollectionStep(yaml *strings.Builder, data *Wor
 	yaml.WriteString("          path: ${{ env.GH_AW_AGENT_OUTPUT }}\n")
 	yaml.WriteString("          if-no-files-found: warn\n")
 
+}
+
+// readImportedMarkdown reads an imported file and extracts its markdown body (excluding frontmatter).
+// The importPath is expected relative to the git root (e.g. ".github/workflows/fragments/tools.md").
+func (c *Compiler) readImportedMarkdown(importPath string) (string, error) {
+	var fullPath string
+	if c.gitRoot != "" {
+		fullPath = filepath.Join(c.gitRoot, importPath)
+	} else {
+		fullPath = importPath
+	}
+
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("reading import %s: %w", importPath, err)
+	}
+
+	markdown, err := parser.ExtractMarkdownContent(string(content))
+	if err != nil {
+		return "", fmt.Errorf("extracting markdown from %s: %w", importPath, err)
+	}
+
+	return markdown, nil
+}
+
+// processMarkdownForInlining prepares raw markdown for embedding in compiled YAML.
+// It strips XML comments, wraps GitHub expressions in template conditionals,
+// extracts expressions for the substitution step, and splits content into chunks.
+// Returns the prompt chunks and any expression mappings found.
+func processMarkdownForInlining(markdown string) ([]string, []*ExpressionMapping) {
+	cleaned := removeXMLComments(markdown)
+	cleaned = wrapExpressionsInTemplateConditionals(cleaned)
+
+	var mappings []*ExpressionMapping
+	extractor := NewExpressionExtractor()
+	exprMappings, err := extractor.ExtractExpressions(cleaned)
+	if err == nil && len(exprMappings) > 0 {
+		cleaned = extractor.ReplaceExpressionsWithEnvVars(cleaned)
+		mappings = exprMappings
+	}
+
+	chunks := splitContentIntoChunks(cleaned)
+	return chunks, mappings
 }
