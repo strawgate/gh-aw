@@ -22,7 +22,7 @@
 # For more information: https://github.github.com/gh-aw/introduction/overview/
 #
 #
-# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"e9eb79dab1382ce43224a022cc333e4d6e186932a3b1e49c278e0433035f1764"}
+# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"21bdcbe025a2db4071f822ed2083f0b7eccbebcfea6ed4d62d2db6b9170eab44"}
 
 name: "Contribution Check"
 "on":
@@ -281,11 +281,6 @@ jobs:
           persist-credentials: false
       - name: Create gh-aw temp directory
         run: bash /opt/gh-aw/actions/create_gh_aw_tmp_dir.sh
-      - name: Fetch and filter PRs
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        with:
-          script: "const fs = require('fs');\nconst [targetOwner, targetRepo] = process.env.TARGET_REPOSITORY.split('/');\n\nconst TARGET = 10;\nconst MAX_PAGES = 3;\nconst PER_PAGE = 20;\n\nconst SKIP_LABELS = new Set(['maintainer', 'trusted-contributor']);\nconst SMALL_LABELS = new Set(['size: XS', 'size: S']);\n\nconst skipReason = (pr) => {\n  if (pr.author_association === 'MEMBER' || pr.author_association === 'OWNER') return 'maintainer';\n  const labels = pr.labels.map(l => l.name);\n  if (labels.some(l => SKIP_LABELS.has(l))) return 'maintainer';\n  if (labels.some(l => SMALL_LABELS.has(l))) return 'small';\n  if (labels.some(l => l.startsWith('close:') || l.startsWith('r: '))) return 'triaged';\n  return null;\n};\n\nconst accepted = [];\nconst allPRs = [];\n\nconst sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));\n\nfor (let page = 1; page <= MAX_PAGES && accepted.length < TARGET; page++) {\n  if (page > 1) await sleep(1000);\n  core.startGroup(`Page ${page}/${MAX_PAGES} (accepted ${accepted.length}/${TARGET} so far)`);\n\n  const batch = await github.rest.pulls.list({\n    owner: targetOwner,\n    repo: targetRepo,\n    state: 'open',\n    sort: 'created',\n    direction: 'desc',\n    per_page: PER_PAGE,\n    page,\n  });\n\n  const prs = batch.data;\n  core.info(`Fetched ${prs.length} PRs`);\n\n  if (prs.length === 0) {\n    core.info('No more PRs to fetch');\n    core.endGroup();\n    break;\n  }\n\n  for (const pr of prs) {\n    const labels = pr.labels.map(l => l.name).join(', ');\n    core.info(`  #${pr.number} association=${pr.author_association} labels=[${labels}]`);\n  }\n\n  allPRs.push(...prs);\n\n  for (const pr of prs) {\n    if (accepted.length >= TARGET) break;\n    if (!skipReason(pr)) accepted.push(pr.number);\n  }\n\n  core.info(`Accepted: ${accepted.length}/${TARGET} | Skipped so far: ${allPRs.length - accepted.length}`);\n  core.endGroup();\n}\n\nconst prList = accepted.slice(0, TARGET);\nconst skipped = allPRs.length - accepted.length;\n\ncore.startGroup('Final results');\ncore.info(`Fetched: ${allPRs.length} | Evaluated: ${accepted.length} | Skipped: ${skipped}`);\ncore.info(`PR list: ${prList.join(',')}`);\ncore.endGroup();\n\n// Step summary\nconst rows = allPRs.map(pr => {\n  const num = pr.number;\n  const assoc = pr.author_association;\n  const labels = pr.labels.map(l => l.name).join(', ');\n  const reason = skipReason(pr) ?? 'evaluate';\n  const icon = reason === 'evaluate' ? '✅' : '⏭️';\n  return `| #${num} | \\`${assoc}\\` | ${labels} | ${icon} ${reason} |`;\n});\n\nconst summary = [\n  '### 🔍 PR Pre-filter Results',\n  '',\n  `**Fetched:** ${allPRs.length} | **Evaluated:** ${accepted.length} | **Skipped:** ${skipped}`,\n  '',\n  '| PR | Association | Labels | Status |',\n  '|---|---|---|---|',\n  ...rows,\n].join('\\n');\n\nawait core.summary.addRaw(summary).write();\n\n// Write results to a file the agent can read\nconst result = {\n  pr_numbers: prList,\n  skipped_count: skipped,\n  evaluated_count: accepted.length,\n};\nfs.writeFileSync('pr-filter-results.json', JSON.stringify(result, null, 2));\ncore.info(`Wrote pr-filter-results.json: ${JSON.stringify(result)}`);\n"
-
       - name: Configure Git credentials
         env:
           REPO_NAME: ${{ github.repository }}
@@ -371,7 +366,7 @@ jobs:
           mkdir -p /tmp/gh-aw/safeoutputs
           mkdir -p /tmp/gh-aw/mcp-logs/safeoutputs
           cat > /opt/gh-aw/safeoutputs/config.json << 'GH_AW_SAFE_OUTPUTS_CONFIG_EOF'
-          {"add_comment":{"max":10,"target":"*","target-repo":"${{ vars.TARGET_REPOSITORY || 'openclaw/openclaw' }}"},"add_labels":{"allowed":["spam","needs-work","outdated","lgtm"],"max":4,"target":"*","target-repo":"${{ vars.TARGET_REPOSITORY || 'openclaw/openclaw' }}"},"create_issue":{"max":1},"missing_data":{},"missing_tool":{},"noop":{"max":1}}
+          {"add_comment":{"max":10,"target":"*","target-repo":"${{ vars.TARGET_REPOSITORY }}"},"add_labels":{"allowed":["spam","needs-work","outdated","lgtm"],"max":4,"target":"*","target-repo":"${{ vars.TARGET_REPOSITORY }}"},"create_issue":{"max":1},"missing_data":{},"missing_tool":{},"noop":{"max":1}}
           GH_AW_SAFE_OUTPUTS_CONFIG_EOF
           cat > /opt/gh-aw/safeoutputs/tools.json << 'GH_AW_SAFE_OUTPUTS_TOOLS_EOF'
           [
@@ -417,7 +412,7 @@ jobs:
               "name": "create_issue"
             },
             {
-              "description": "Add a comment to an existing GitHub issue, pull request, or discussion. Use this to provide feedback, answer questions, or add information to an existing conversation. For creating new items, use create_issue, create_discussion, or create_pull_request instead. IMPORTANT: Comments are subject to validation constraints enforced by the MCP server - maximum 65536 characters for the complete comment (including footer which is added automatically), 10 mentions (@username), and 50 links. Exceeding these limits will result in an immediate error with specific guidance. NOTE: By default, this tool requires discussions:write permission. If your GitHub App lacks Discussions permission, set 'discussions: false' in the workflow's safe-outputs.add-comment configuration to exclude this permission. CONSTRAINTS: Maximum 10 comment(s) can be added. Target: *. Comments will be added in repository \"${{ vars.TARGET_REPOSITORY || 'openclaw/openclaw' }}\".",
+              "description": "Add a comment to an existing GitHub issue, pull request, or discussion. Use this to provide feedback, answer questions, or add information to an existing conversation. For creating new items, use create_issue, create_discussion, or create_pull_request instead. IMPORTANT: Comments are subject to validation constraints enforced by the MCP server - maximum 65536 characters for the complete comment (including footer which is added automatically), 10 mentions (@username), and 50 links. Exceeding these limits will result in an immediate error with specific guidance. NOTE: By default, this tool requires discussions:write permission. If your GitHub App lacks Discussions permission, set 'discussions: false' in the workflow's safe-outputs.add-comment configuration to exclude this permission. CONSTRAINTS: Maximum 10 comment(s) can be added. Target: *. Comments will be added in repository \"${{ vars.TARGET_REPOSITORY }}\".",
               "inputSchema": {
                 "additionalProperties": false,
                 "properties": {
@@ -1148,7 +1143,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"add_comment\":{\"hide_older_comments\":true,\"max\":10,\"target\":\"*\",\"target-repo\":\"${{ vars.TARGET_REPOSITORY || 'openclaw/openclaw' }}\"},\"add_labels\":{\"allowed\":[\"spam\",\"needs-work\",\"outdated\",\"lgtm\"],\"max\":4,\"target\":\"*\",\"target-repo\":\"${{ vars.TARGET_REPOSITORY || 'openclaw/openclaw' }}\"},\"create_issue\":{\"close_older_issues\":true,\"labels\":[\"contribution-report\"],\"max\":1,\"title_prefix\":\"[Contribution Check Report]\"},\"missing_data\":{},\"missing_tool\":{}}"
+          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"add_comment\":{\"hide_older_comments\":true,\"max\":10,\"target\":\"*\",\"target-repo\":\"${{ vars.TARGET_REPOSITORY }}\"},\"add_labels\":{\"allowed\":[\"spam\",\"needs-work\",\"outdated\",\"lgtm\"],\"max\":4,\"target\":\"*\",\"target-repo\":\"${{ vars.TARGET_REPOSITORY }}\"},\"create_issue\":{\"close_older_issues\":true,\"labels\":[\"contribution-report\"],\"max\":1,\"title_prefix\":\"[Contribution Check Report]\"},\"missing_data\":{},\"missing_tool\":{}}"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
