@@ -84,6 +84,9 @@ func validateSafeOutputsTarget(config *SafeOutputsConfig) error {
 	if config.CreatePullRequestReviewComments != nil {
 		configs = append(configs, targetConfig{"create-pull-request-review-comment", config.CreatePullRequestReviewComments.Target})
 	}
+	if config.SubmitPullRequestReview != nil {
+		configs = append(configs, targetConfig{"submit-pull-request-review", config.SubmitPullRequestReview.Target})
+	}
 	if config.ReplyToPullRequestReviewComment != nil {
 		configs = append(configs, targetConfig{"reply-to-pull-request-review-comment", config.ReplyToPullRequestReviewComment.Target})
 	}

@@ -331,6 +331,7 @@ var handlerRegistry = map[string]handlerBuilder{
 		c := cfg.SubmitPullRequestReview
 		return newHandlerConfigBuilder().
 			AddIfPositive("max", c.Max).
+			AddIfNotEmpty("target", c.Target).
 			AddStringPtr("footer", getEffectiveFooterString(c.Footer, cfg.Footer)).
 			Build()
 	},

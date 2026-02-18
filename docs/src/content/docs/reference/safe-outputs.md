@@ -736,12 +736,15 @@ If the agent calls `submit_pull_request_review`, it can specify a review `body` 
 
 If the agent does not call `submit_pull_request_review` at all, buffered comments are still submitted as a COMMENT review automatically.
 
+When the workflow is not triggered by a pull request (e.g. `workflow_dispatch`), set `target` to the PR number (e.g. `${{ github.event.inputs.pr_number }}`) so the review can be submitted. Same semantics as [add-comment](#comment-creation-add-comment) `target`: `"triggering"` (default), `"*"` (use `pull_request_number` from the message), or an explicit number.
+
 ```yaml wrap
 safe-outputs:
   create-pull-request-review-comment:
     max: 10
   submit-pull-request-review:
     max: 1            # max reviews to submit (default: 1)
+    target: "triggering"  # or "*", or e.g. ${{ github.event.inputs.pr_number }} when not in pull_request trigger
     footer: false     # omit AI-generated footer from review body (default: true)
 ```
 
