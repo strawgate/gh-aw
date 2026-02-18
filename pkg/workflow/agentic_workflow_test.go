@@ -98,7 +98,6 @@ func TestAgenticWorkflowsMCPConfigGeneration(t *testing.T) {
 	}{
 		{"Claude", NewClaudeEngine()},
 		{"Copilot", NewCopilotEngine()},
-		{"Custom", NewCustomEngine()},
 		{"Codex", NewCodexEngine()},
 	}
 

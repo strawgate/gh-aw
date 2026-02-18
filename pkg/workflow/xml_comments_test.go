@@ -512,7 +512,7 @@ End`,
 		{
 			name: "Real-world case: shared workflow import documentation",
 			input: `<!--
-This shared configuration sets up a custom engine.
+This shared configuration sets up a codex engine.
 
 **Usage:**
 Include this file in your workflow using frontmatter imports:

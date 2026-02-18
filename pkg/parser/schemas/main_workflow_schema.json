@@ -4817,6 +4817,10 @@
                     "type": "string",
                     "enum": ["spam", "abuse", "off_topic", "outdated", "resolved"]
                   }
+                },
+                "discussions": {
+                  "type": "boolean",
+                  "description": "Controls whether the workflow requests discussions:write permission for add-comment. Default: true (includes discussions:write). Set to false if your GitHub App lacks Discussions permission to prevent 422 errors during token generation."
                 }
               },
               "additionalProperties": false,
@@ -5448,6 +5452,11 @@
                   "type": "string",
                   "description": "Target repository in format 'owner/repo' for cross-repository user assignment. Takes precedence over trial target repo settings."
                 },
+                "unassign-first": {
+                  "type": "boolean",
+                  "description": "If true, unassign all current assignees before assigning new ones. Useful for reassigning issues from one user to another (default: false).",
+                  "default": false
+                },
                 "github-token": {
                   "$ref": "#/$defs/github_token",
                   "description": "GitHub token to use for this specific output type. Overrides global github-token if specified."
@@ -5736,6 +5745,10 @@
                     "type": "string",
                     "enum": ["spam", "abuse", "off_topic", "outdated", "resolved"]
                   }
+                },
+                "discussions": {
+                  "type": "boolean",
+                  "description": "Controls whether the workflow requests discussions:write permission for hide-comment. Default: true (includes discussions:write). Set to false if your GitHub App lacks Discussions permission to prevent 422 errors during token generation."
                 }
               },
               "additionalProperties": false
@@ -6779,8 +6792,8 @@
       "oneOf": [
         {
           "type": "string",
-          "enum": ["claude", "codex", "copilot", "copilot-sdk", "custom"],
-          "description": "Simple engine name: 'claude' (default, Claude Code), 'copilot' (GitHub Copilot CLI), 'copilot-sdk' (GitHub Copilot SDK), 'codex' (OpenAI Codex CLI), or 'custom' (user-defined steps)"
+          "enum": ["claude", "codex", "copilot"],
+          "description": "Simple engine name: 'claude' (default, Claude Code), 'copilot' (GitHub Copilot CLI), or 'codex' (OpenAI Codex CLI)"
         },
         {
           "type": "object",
@@ -6788,8 +6801,8 @@
           "properties": {
             "id": {
               "type": "string",
-              "enum": ["claude", "codex", "custom", "copilot", "copilot-sdk"],
-              "description": "AI engine identifier: 'claude' (Claude Code), 'codex' (OpenAI Codex CLI), 'copilot' (GitHub Copilot CLI), 'copilot-sdk' (GitHub Copilot SDK), or 'custom' (user-defined GitHub Actions steps)"
+              "enum": ["claude", "codex", "copilot"],
+              "description": "AI engine identifier: 'claude' (Claude Code), 'codex' (OpenAI Codex CLI), or 'copilot' (GitHub Copilot CLI)"
             },
             "version": {
               "type": ["string", "number"],

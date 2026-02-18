@@ -301,9 +301,6 @@ const (
 	// CodexLLMGatewayPort is the port for the Codex LLM gateway
 	CodexLLMGatewayPort = 10001
 
-	// CopilotSDKLLMGatewayPort is the port for the Copilot SDK LLM gateway
-	CopilotSDKLLMGatewayPort = 10002
-
 	// CopilotLLMGatewayPort is the port for the Copilot LLM gateway
 	CopilotLLMGatewayPort = 10002
 )
@@ -321,12 +318,12 @@ const PublicGitHubHost URL = "https://github.com"
 const GitHubCopilotMCPDomain = "api.githubcopilot.com"
 
 // DefaultClaudeCodeVersion is the default version of the Claude Code CLI.
-const DefaultClaudeCodeVersion Version = "2.1.44"
+const DefaultClaudeCodeVersion Version = "2.1.45"
 
 // DefaultCopilotVersion is the default version of the GitHub Copilot CLI.
 //
 // WARNING: UPGRADING COPILOT CLI REQUIRES A FULL INTEGRATION TEST RUN TO ENSURE COMPATIBILITY.
-const DefaultCopilotVersion Version = "0.0.410"
+const DefaultCopilotVersion Version = "0.0.411"
 
 // DefaultCopilotDetectionModel is the default model for the Copilot engine when used in the detection job
 // Updated to gpt-5.1-codex-mini after gpt-5-mini deprecation on 2026-01-17
@@ -374,7 +371,7 @@ const (
 )
 
 // DefaultCodexVersion is the default version of the OpenAI Codex CLI
-const DefaultCodexVersion Version = "0.101.0"
+const DefaultCodexVersion Version = "0.104.0"
 
 // DefaultGitHubMCPServerVersion is the default version of the GitHub MCP server Docker image
 const DefaultGitHubMCPServerVersion Version = "v0.30.3"
@@ -679,19 +676,15 @@ const DefaultRateLimitWindow = 60 // Default time window in minutes (1 hour)
 const (
 	// CopilotEngine is the GitHub Copilot engine identifier
 	CopilotEngine EngineName = "copilot"
-	// CopilotSDKEngine is the GitHub Copilot SDK engine identifier
-	CopilotSDKEngine EngineName = "copilot-sdk"
 	// ClaudeEngine is the Anthropic Claude engine identifier
 	ClaudeEngine EngineName = "claude"
 	// CodexEngine is the OpenAI Codex engine identifier
 	CodexEngine EngineName = "codex"
-	// CustomEngine is the custom engine identifier
-	CustomEngine EngineName = "custom"
 )
 
 // AgenticEngines lists all supported agentic engine names
 // Note: This remains a string slice for backward compatibility with existing code
-var AgenticEngines = []string{string(ClaudeEngine), string(CodexEngine), string(CopilotEngine), string(CopilotSDKEngine)}
+var AgenticEngines = []string{string(ClaudeEngine), string(CodexEngine), string(CopilotEngine)}
 
 // EngineOption represents a selectable AI engine with its display metadata and secret configuration
 type EngineOption struct {
@@ -714,14 +707,6 @@ var EngineOptions = []EngineOption{
 		SecretName:  "COPILOT_GITHUB_TOKEN",
 		KeyURL:      "https://github.com/settings/personal-access-tokens/new",
 		WhenNeeded:  "Copilot workflows (CLI, engine, agent tasks, etc.)",
-	},
-	{
-		Value:       string(CopilotSDKEngine),
-		Label:       "GitHub Copilot SDK",
-		Description: "GitHub Copilot SDK with headless mode",
-		SecretName:  "COPILOT_GITHUB_TOKEN",
-		KeyURL:      "https://github.com/settings/personal-access-tokens/new",
-		WhenNeeded:  "Copilot SDK workflows with headless mode",
 	},
 	{
 		Value:              string(ClaudeEngine),

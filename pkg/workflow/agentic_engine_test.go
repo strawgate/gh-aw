@@ -11,8 +11,8 @@ func TestEngineRegistry(t *testing.T) {
 
 	// Test that built-in engines are registered
 	supportedEngines := registry.GetSupportedEngines()
-	if len(supportedEngines) != 5 {
-		t.Errorf("Expected 5 supported engines, got %d", len(supportedEngines))
+	if len(supportedEngines) != 3 {
+		t.Errorf("Expected 3 supported engines, got %d", len(supportedEngines))
 	}
 
 	// Test getting engines by ID
@@ -32,14 +32,6 @@ func TestEngineRegistry(t *testing.T) {
 		t.Errorf("Expected codex engine ID, got '%s'", codexEngine.GetID())
 	}
 
-	customEngine, err := registry.GetEngine("custom")
-	if err != nil {
-		t.Errorf("Expected to find custom engine, got error: %v", err)
-	}
-	if customEngine.GetID() != "custom" {
-		t.Errorf("Expected custom engine ID, got '%s'", customEngine.GetID())
-	}
-
 	// Test getting non-existent engine
 	_, err = registry.GetEngine("nonexistent")
 	if err == nil {
@@ -53,10 +45,6 @@ func TestEngineRegistry(t *testing.T) {
 
 	if !registry.IsValidEngine("codex") {
 		t.Error("Expected codex to be valid engine")
-	}
-
-	if !registry.IsValidEngine("custom") {
-		t.Error("Expected custom to be valid engine")
 	}
 
 	if registry.IsValidEngine("nonexistent") {
@@ -82,43 +70,5 @@ func TestEngineRegistry(t *testing.T) {
 	_, err = registry.GetEngineByPrefix("nonexistent-prefix")
 	if err == nil {
 		t.Error("Expected error when getting engine by non-matching prefix")
-	}
-}
-
-func TestEngineRegistryCustomEngine(t *testing.T) {
-	registry := NewEngineRegistry()
-
-	// Create a custom engine for testing
-	customEngine := &ClaudeEngine{
-		BaseEngine: BaseEngine{
-			id:                     "test-custom",
-			displayName:            "Test Custom Engine",
-			description:            "A test custom engine",
-			experimental:           true,
-			supportsToolsAllowlist: false,
-		},
-	}
-
-	// Register the custom engine
-	registry.Register(customEngine)
-
-	// Test that it's now available
-	engine, err := registry.GetEngine("test-custom")
-	if err != nil {
-		t.Errorf("Expected to find test-custom engine, got error: %v", err)
-	}
-
-	if engine.GetID() != "test-custom" {
-		t.Errorf("Expected test-custom engine ID, got '%s'", engine.GetID())
-	}
-
-	if !engine.IsExperimental() {
-		t.Error("Expected test-custom engine to be experimental")
-	}
-
-	// Test that supported engines list is updated
-	supportedEngines := registry.GetSupportedEngines()
-	if len(supportedEngines) != 6 {
-		t.Errorf("Expected 6 supported engines after adding test-custom, got %d", len(supportedEngines))
 	}
 }

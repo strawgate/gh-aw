@@ -221,26 +221,9 @@ bundle-js:
 	@echo "✓ bundle-js tool built"
 	@echo "To bundle a JavaScript file: ./bundle-js <input-file> [output-file]"
 
-# Install copilot-client dependencies
-.PHONY: deps-copilot-client
-deps-copilot-client: check-node-version
-	cd copilot-client && npm ci
-
-# Build copilot-client TypeScript project
-.PHONY: copilot-client
-copilot-client: deps-copilot-client
-	@echo "Building copilot-client..."
-	cd copilot-client && npm run build
-	@echo "✓ Copilot client built"
-
-# Test copilot-client
-.PHONY: test-copilot-client
-test-copilot-client: copilot-client
-	cd copilot-client && npm test
-
-# Test all code (Go, JavaScript, and copilot-client)
+# Test all code (Go and JavaScript)
 .PHONY: test-all
-test-all: test test-js test-copilot-client
+test-all: test test-js
 
 # Run tests with coverage
 .PHONY: test-coverage
@@ -394,7 +377,10 @@ check-node-version:
 .PHONY: tools
 tools: ## Install build-time tools from tools.go
 	@echo "Installing build tools..."
-	@grep _ tools.go | awk -F'"' '{print $$2}' | xargs -tI % go install %
+	@go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
+	@go install github.com/securego/gosec/v2/cmd/gosec@v2.23.0
+	@go install golang.org/x/tools/gopls@v0.21.1
+	@go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 	@echo "✓ Tools installed successfully"
 
 # Install golangci-lint binary (avoiding GPL dependencies in go.mod)
@@ -669,7 +655,7 @@ sync-action-scripts:
 
 # Recompile all workflow files
 .PHONY: recompile
-recompile: build copilot-client
+recompile: build
 	./$(BINARY_NAME) init --codespaces
 	./$(BINARY_NAME) compile --validate --verbose --purge --stats
 #	./$(BINARY_NAME) compile --dir pkg/cli/workflows --validate --verbose --purge

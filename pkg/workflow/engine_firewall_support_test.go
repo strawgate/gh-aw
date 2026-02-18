@@ -28,13 +28,6 @@ func TestSupportsFirewall(t *testing.T) {
 			t.Error("Codex engine should support firewall")
 		}
 	})
-
-	t.Run("custom engine does not support firewall", func(t *testing.T) {
-		engine := NewCustomEngine()
-		if engine.SupportsFirewall() {
-			t.Error("Custom engine should not support firewall")
-		}
-	})
 }
 
 func TestHasNetworkRestrictions(t *testing.T) {
@@ -155,22 +148,6 @@ func TestCheckNetworkSupport_WithRestrictions(t *testing.T) {
 		}
 	})
 
-	t.Run("custom engine with restrictions - warning emitted", func(t *testing.T) {
-		compiler := NewCompiler()
-		engine := NewCustomEngine()
-		perms := &NetworkPermissions{
-			Allowed: []string{"example.com"},
-		}
-
-		initialWarnings := compiler.warningCount
-		err := compiler.checkNetworkSupport(engine, perms)
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-		if compiler.warningCount != initialWarnings+1 {
-			t.Error("Should emit warning for custom engine with network restrictions")
-		}
-	})
 }
 
 func TestCheckNetworkSupport_StrictMode(t *testing.T) {
@@ -213,20 +190,6 @@ func TestCheckNetworkSupport_StrictMode(t *testing.T) {
 		err := compiler.checkNetworkSupport(engine, perms)
 		if err != nil {
 			t.Errorf("Expected no error for codex in strict mode, got: %v", err)
-		}
-	})
-
-	t.Run("strict mode: custom engine with restrictions - error", func(t *testing.T) {
-		compiler := NewCompiler()
-		compiler.strictMode = true
-		engine := NewCustomEngine()
-		perms := &NetworkPermissions{
-			Allowed: []string{"example.com"},
-		}
-
-		err := compiler.checkNetworkSupport(engine, perms)
-		if err == nil {
-			t.Error("Expected error in strict mode for custom engine with restrictions")
 		}
 	})
 
@@ -316,24 +279,6 @@ func TestCheckFirewallDisable(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "strict mode") {
 			t.Errorf("Error should mention strict mode, got: %v", err)
-		}
-	})
-
-	t.Run("strict mode: firewall disabled with unsupported engine - error", func(t *testing.T) {
-		compiler := NewCompiler()
-		compiler.strictMode = true
-		engine := NewCustomEngine() // Custom engine doesn't support firewall
-		perms := &NetworkPermissions{
-			Firewall: &FirewallConfig{
-				Enabled: false,
-			},
-		}
-
-		err := compiler.checkFirewallDisable(engine, perms)
-		if err == nil {
-			t.Error("Expected error in strict mode when firewall is disabled with unsupported engine")
-		} else if !strings.Contains(err.Error(), "does not support firewall") {
-			t.Errorf("Error should mention firewall support, got: %v", err)
 		}
 	})
 

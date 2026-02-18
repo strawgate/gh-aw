@@ -23,7 +23,7 @@ func TestJobsSecretsValidation(t *testing.T) {
 			name: "valid single secret reference",
 			markdown: `---
 on: workflow_dispatch
-engine: custom
+engine: codex
 jobs:
   deploy:
     uses: ./.github/workflows/deploy.yml
@@ -37,7 +37,7 @@ Test workflow with valid single secret.`,
 			name: "valid secret with fallback",
 			markdown: `---
 on: workflow_dispatch
-engine: custom
+engine: codex
 jobs:
   deploy:
     uses: ./.github/workflows/deploy.yml
@@ -52,7 +52,7 @@ Test workflow with secret fallback.`,
 			name: "invalid plaintext secret",
 			markdown: `---
 on: workflow_dispatch
-engine: custom
+engine: codex
 jobs:
   deploy:
     uses: ./.github/workflows/deploy.yml
@@ -67,7 +67,7 @@ Test workflow with plaintext secret.`,
 			name: "invalid env variable reference",
 			markdown: `---
 on: workflow_dispatch
-engine: custom
+engine: codex
 jobs:
   deploy:
     uses: ./.github/workflows/deploy.yml
@@ -167,7 +167,7 @@ func TestJobsSecretsSchemaValidation(t *testing.T) {
 			name: "schema rejects plaintext in secrets",
 			markdown: `---
 on: workflow_dispatch
-engine: custom
+engine: codex
 jobs:
   deploy:
     uses: ./.github/workflows/deploy.yml
@@ -182,7 +182,7 @@ Test for schema validation.`,
 			name: "schema accepts valid secret expression",
 			markdown: `---
 on: workflow_dispatch
-engine: custom
+engine: codex
 jobs:
   deploy:
     uses: ./.github/workflows/deploy.yml
@@ -234,7 +234,7 @@ on:
 
 permissions: read-all
 
-engine: custom
+engine: codex
 
 jobs:
   deploy:

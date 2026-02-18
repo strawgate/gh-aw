@@ -228,7 +228,7 @@ func TestValidEngineNames(t *testing.T) {
 	assert.NotEmpty(t, engines, "Engine names list should not be empty")
 
 	// Verify expected engines are present
-	expectedEngines := []string{"copilot", "claude", "codex", "custom"}
+	expectedEngines := []string{"copilot", "claude", "codex"}
 	for _, expected := range expectedEngines {
 		assert.Contains(t, engines, expected, "Expected engine '%s' to be in the list", expected)
 	}
@@ -245,22 +245,22 @@ func TestCompleteEngineNames(t *testing.T) {
 		{
 			name:       "empty prefix returns all engines",
 			toComplete: "",
-			wantLen:    5, // copilot, copilot-sdk, claude, codex, custom
+			wantLen:    3, // copilot, claude, codex
 		},
 		{
-			name:       "c prefix returns claude, codex, copilot, copilot-sdk, custom",
+			name:       "c prefix returns claude, codex, copilot",
 			toComplete: "c",
-			wantLen:    5,
-		},
-		{
-			name:       "co prefix returns copilot, copilot-sdk, codex",
-			toComplete: "co",
 			wantLen:    3,
 		},
 		{
-			name:       "cop prefix returns copilot, copilot-sdk",
-			toComplete: "cop",
+			name:       "co prefix returns copilot, codex",
+			toComplete: "co",
 			wantLen:    2,
+		},
+		{
+			name:       "cop prefix returns copilot",
+			toComplete: "cop",
+			wantLen:    1,
 		},
 		{
 			name:       "x prefix returns nothing",
@@ -702,9 +702,8 @@ func TestCompleteEngineNamesExactMatch(t *testing.T) {
 	// Test exact match - should still return the matching engine
 	completions, directive := CompleteEngineNames(cmd, nil, "copilot")
 	assert.Equal(t, cobra.ShellCompDirectiveNoFileComp, directive)
-	assert.Len(t, completions, 2, "Should return copilot and copilot-sdk")
+	assert.Len(t, completions, 1, "Should return copilot")
 	assert.Contains(t, completions, "copilot")
-	assert.Contains(t, completions, "copilot-sdk")
 }
 
 // TestCompleteEngineNamesCaseSensitivity tests engine name completion is case-sensitive
@@ -719,7 +718,7 @@ func TestCompleteEngineNamesCaseSensitivity(t *testing.T) {
 		{
 			name:       "lowercase copilot",
 			toComplete: "copilot",
-			wantLen:    2, // copilot and copilot-sdk
+			wantLen:    1, // copilot
 		},
 		{
 			name:       "uppercase COPILOT should not match",
@@ -754,7 +753,7 @@ func TestValidEngineNamesConsistency(t *testing.T) {
 	assert.Len(t, thirdCall, len(secondCall), "Engine names list length should be consistent")
 
 	// Verify all expected engines are present in all calls
-	expectedEngines := []string{"copilot", "claude", "codex", "custom"}
+	expectedEngines := []string{"copilot", "claude", "codex"}
 	for _, engine := range expectedEngines {
 		assert.Contains(t, firstCall, engine, "Expected engine '%s' in first call", engine)
 		assert.Contains(t, secondCall, engine, "Expected engine '%s' in second call", engine)

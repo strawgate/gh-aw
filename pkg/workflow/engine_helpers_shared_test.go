@@ -8,7 +8,8 @@ import (
 	"testing"
 )
 
-// TestInjectCustomEngineSteps verifies that custom steps are properly injected
+// TestInjectCustomEngineSteps verifies that custom steps from engine config are properly injected
+// Note: This is used by all engines (claude, codex, copilot) to support custom steps in engine config
 func TestInjectCustomEngineSteps(t *testing.T) {
 	tests := []struct {
 		name           string

@@ -162,11 +162,11 @@ func TestSharedWorkflowWithEngineOnly(t *testing.T) {
 	sharedPath := filepath.Join(tempDir, "shared-engine.md")
 	sharedContent := `---
 engine:
-  id: custom
+  id: codex
   env:
     MODEL_VERSION: "gpt-4"
   steps:
-    - name: Custom step
+    - name: Codex step
       run: echo "test"
 ---
 

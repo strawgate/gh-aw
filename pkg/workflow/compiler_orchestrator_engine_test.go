@@ -466,13 +466,13 @@ permissions:
 	require.NotNil(t, result)
 }
 
-// TestSetupEngineAndImports_ExperimentalEngine tests custom engine setup
+// TestSetupEngineAndImports_ExperimentalEngine tests codex engine setup
 func TestSetupEngineAndImports_ExperimentalEngine(t *testing.T) {
 	tmpDir := testutil.TempDir(t, "engine-experimental")
 
 	testContent := `---
 on: push
-engine: custom
+engine: codex
 ---
 
 # Test Workflow
@@ -491,7 +491,7 @@ engine: custom
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Custom engine should be set up successfully
+	// Codex engine should be set up successfully
 	assert.NotNil(t, result.agenticEngine)
-	assert.Equal(t, "custom", result.engineSetting)
+	assert.Equal(t, "codex", result.engineSetting)
 }

@@ -277,23 +277,6 @@ func TestValidateStrictFirewall_LLMGatewaySupport(t *testing.T) {
 			t.Errorf("Expected no error for wildcard (skips all validation), got: %v", err)
 		}
 	})
-
-	t.Run("custom engine without LLM gateway support rejects custom domains", func(t *testing.T) {
-		compiler := NewCompiler()
-		compiler.strictMode = true
-
-		networkPerms := &NetworkPermissions{
-			Allowed: []string{"custom-domain.com"},
-		}
-
-		err := compiler.validateStrictFirewall("custom", networkPerms, nil)
-		if err == nil {
-			t.Error("Expected error for custom engine with custom domains, got nil")
-		}
-		if err != nil && !strings.Contains(err.Error(), "network domains must be from known ecosystems") {
-			t.Errorf("Expected error about known ecosystems, got: %v", err)
-		}
-	})
 }
 
 // TestSupportsLLMGateway tests the SupportsLLMGateway method for each engine
@@ -316,19 +299,9 @@ func TestSupportsLLMGateway(t *testing.T) {
 			description:  "Claude engine uses dedicated port for LLM gateway",
 		},
 		{
-			engineID:     "copilot-sdk",
-			expectedPort: constants.CopilotSDKLLMGatewayPort,
-			description:  "Copilot SDK engine uses dedicated port for LLM gateway",
-		},
-		{
 			engineID:     "copilot",
 			expectedPort: constants.CopilotLLMGatewayPort,
 			description:  "Copilot engine uses dedicated port for LLM gateway",
-		},
-		{
-			engineID:     "custom",
-			expectedPort: -1,
-			description:  "Custom engine does not support LLM gateway",
 		},
 	}
 

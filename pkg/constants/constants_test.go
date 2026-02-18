@@ -83,7 +83,7 @@ func TestAgenticEngines(t *testing.T) {
 		t.Error("AgenticEngines should not be empty")
 	}
 
-	expectedEngines := []string{"claude", "codex", "copilot", "copilot-sdk"}
+	expectedEngines := []string{"claude", "codex", "copilot"}
 	if len(AgenticEngines) != len(expectedEngines) {
 		t.Errorf("AgenticEngines length = %d, want %d", len(AgenticEngines), len(expectedEngines))
 	}
@@ -103,12 +103,6 @@ func TestAgenticEngines(t *testing.T) {
 	}
 	if string(CopilotEngine) != "copilot" {
 		t.Errorf("CopilotEngine constant = %q, want %q", CopilotEngine, "copilot")
-	}
-	if string(CopilotSDKEngine) != "copilot-sdk" {
-		t.Errorf("CopilotSDKEngine constant = %q, want %q", CopilotSDKEngine, "copilot-sdk")
-	}
-	if string(CustomEngine) != "custom" {
-		t.Errorf("CustomEngine constant = %q, want %q", CustomEngine, "custom")
 	}
 }
 
@@ -493,11 +487,6 @@ func TestSemanticTypeAliases(t *testing.T) {
 		codex := CodexEngine
 		if string(codex) != "codex" {
 			t.Errorf("CodexEngine = %q, want %q", codex, "codex")
-		}
-
-		custom := CustomEngine
-		if string(custom) != "custom" {
-			t.Errorf("CustomEngine = %q, want %q", custom, "custom")
 		}
 	})
 }

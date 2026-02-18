@@ -36,11 +36,6 @@ func TestValidateEngine(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "custom engine is valid",
-			engineID:    "custom",
-			expectError: false,
-		},
-		{
 			name:        "invalid engine ID",
 			engineID:    "invalid-engine",
 			expectError: true,
@@ -85,8 +80,8 @@ func TestValidateEngineErrorMessageQuality(t *testing.T) {
 
 	// Error should list all valid engine options
 	if !strings.Contains(errorMsg, "copilot") || !strings.Contains(errorMsg, "claude") ||
-		!strings.Contains(errorMsg, "codex") || !strings.Contains(errorMsg, "custom") {
-		t.Errorf("Error message should list all valid engines (copilot, claude, codex, custom), got: %s", errorMsg)
+		!strings.Contains(errorMsg, "codex") {
+		t.Errorf("Error message should list all valid engines (copilot, claude, codex), got: %s", errorMsg)
 	}
 
 	// Error should include an example
@@ -189,9 +184,9 @@ func TestValidateSingleEngineSpecification(t *testing.T) {
 		},
 		{
 			name:                "main engine takes precedence when only non-empty",
-			mainEngineSetting:   "custom",
+			mainEngineSetting:   "codex",
 			includedEnginesJSON: []string{""},
-			expectedEngine:      "custom",
+			expectedEngine:      "codex",
 			expectError:         false,
 		},
 	}
@@ -328,12 +323,6 @@ func TestValidateEngineDidYouMean(t *testing.T) {
 			shouldHaveSuggestion: true,
 		},
 		{
-			name:                 "typo custon suggests custom",
-			invalidEngine:        "custon",
-			expectedSuggestion:   "custom",
-			shouldHaveSuggestion: true,
-		},
-		{
 			name:                 "case difference no suggestion (case-insensitive match)",
 			invalidEngine:        "Copilot",
 			expectedSuggestion:   "",
@@ -433,15 +422,6 @@ func TestValidatePluginSupport(t *testing.T) {
 				Plugins: []string{"org/plugin1", "org/plugin2"},
 			},
 			engineID:    "codex",
-			expectError: true,
-			errorMsg:    "does not support plugins",
-		},
-		{
-			name: "plugins with custom engine (not supported)",
-			pluginInfo: &PluginInfo{
-				Plugins: []string{"org/plugin1"},
-			},
-			engineID:    "custom",
 			expectError: true,
 			errorMsg:    "does not support plugins",
 		},

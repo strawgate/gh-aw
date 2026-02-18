@@ -62,7 +62,7 @@ func TestGetFieldExample(t *testing.T) {
 			name:          "engine",
 			fieldPath:     "engine",
 			errorMsg:      "invalid value",
-			expectedParts: []string{"Valid engines are:", "copilot", "claude", "codex", "custom", "Example:"},
+			expectedParts: []string{"Valid engines are:", "copilot", "claude", "codex", "Example:"},
 		},
 		{
 			name:          "permissions",

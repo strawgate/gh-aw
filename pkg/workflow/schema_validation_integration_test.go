@@ -88,7 +88,7 @@ func TestSchemaValidationExampleQuality(t *testing.T) {
 		{
 			field:    "engine",
 			example:  getFieldExample("engine", &mockValidationError{msg: "test"}),
-			required: []string{"Valid engines are:", "copilot", "claude", "codex", "custom"},
+			required: []string{"Valid engines are:", "copilot", "claude", "codex"},
 		},
 		{
 			field:    "permissions",

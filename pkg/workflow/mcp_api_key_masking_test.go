@@ -23,7 +23,7 @@ func TestSafeOutputsAPIKeyImmediateMasking(t *testing.T) {
 	}
 
 	compiler := &Compiler{}
-	mockEngine := &CustomEngine{}
+	mockEngine := NewClaudeEngine()
 
 	var yaml strings.Builder
 	compiler.generateMCPSetup(&yaml, workflowData.Tools, mockEngine, workflowData)
@@ -90,7 +90,7 @@ func TestSafeInputsAPIKeyImmediateMasking(t *testing.T) {
 	}
 
 	compiler := &Compiler{}
-	mockEngine := &CustomEngine{}
+	mockEngine := NewClaudeEngine()
 
 	var yaml strings.Builder
 	compiler.generateMCPSetup(&yaml, workflowData.Tools, mockEngine, workflowData)
@@ -146,7 +146,7 @@ func TestMCPGatewayAPIKeyImmediateMasking(t *testing.T) {
 	}
 
 	compiler := &Compiler{}
-	mockEngine := &CustomEngine{}
+	mockEngine := NewClaudeEngine()
 
 	var yaml strings.Builder
 	compiler.generateMCPSetup(&yaml, workflowData.Tools, mockEngine, workflowData)
@@ -203,7 +203,7 @@ func TestAPIKeyMaskingNoEmptyDeclaration(t *testing.T) {
 	}
 
 	compiler := &Compiler{}
-	mockEngine := &CustomEngine{}
+	mockEngine := NewClaudeEngine()
 
 	var yaml strings.Builder
 	compiler.generateMCPSetup(&yaml, workflowData.Tools, mockEngine, workflowData)

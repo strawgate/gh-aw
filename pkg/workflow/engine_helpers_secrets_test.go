@@ -233,37 +233,3 @@ func TestGetRequiredSecretNames_Codex(t *testing.T) {
 		assert.Contains(t, secrets, "MCP_GATEWAY_API_KEY")
 	})
 }
-
-// TestGetRequiredSecretNames_Custom tests CustomEngine.GetRequiredSecretNames
-func TestGetRequiredSecretNames_Custom(t *testing.T) {
-	engine := NewCustomEngine()
-
-	t.Run("no secrets without MCP", func(t *testing.T) {
-		workflowData := &WorkflowData{
-			Tools:       map[string]any{},
-			ParsedTools: &ToolsConfig{},
-		}
-
-		secrets := engine.GetRequiredSecretNames(workflowData)
-
-		// Custom engine has no predefined secrets
-		require.Empty(t, secrets)
-	})
-
-	t.Run("includes MCP gateway API key when MCP servers present", func(t *testing.T) {
-		workflowData := &WorkflowData{
-			Tools: map[string]any{
-				"github": map[string]any{},
-			},
-			ParsedTools: &ToolsConfig{
-				GitHub: &GitHubToolConfig{},
-			},
-		}
-
-		secrets := engine.GetRequiredSecretNames(workflowData)
-
-		// Should only include MCP_GATEWAY_API_KEY
-		require.Len(t, secrets, 1)
-		assert.Contains(t, secrets, "MCP_GATEWAY_API_KEY")
-	})
-}

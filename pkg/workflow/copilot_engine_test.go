@@ -73,7 +73,6 @@ func TestOtherEnginesNoDefaultDetectionModel(t *testing.T) {
 	engines := []CodingAgentEngine{
 		NewClaudeEngine(),
 		NewCodexEngine(),
-		NewCustomEngine(),
 	}
 
 	for _, engine := range engines {
@@ -89,7 +88,6 @@ func TestOtherEnginesNoPluginSupport(t *testing.T) {
 	engines := []CodingAgentEngine{
 		NewClaudeEngine(),
 		NewCodexEngine(),
-		NewCustomEngine(),
 	}
 
 	for _, engine := range engines {

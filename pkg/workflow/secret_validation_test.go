@@ -219,19 +219,3 @@ func TestCodexEngineHasSecretValidation(t *testing.T) {
 		t.Error("Should pass both CODEX_API_KEY and OPENAI_API_KEY to the script")
 	}
 }
-
-func TestCustomEngineDoesNotHaveSecretValidation(t *testing.T) {
-	engine := NewCustomEngine()
-	workflowData := &WorkflowData{
-		EngineConfig: &EngineConfig{
-			ID: "custom",
-		},
-	}
-
-	steps := engine.GetInstallationSteps(workflowData)
-
-	// Custom engine should not have any installation steps
-	if len(steps) != 0 {
-		t.Errorf("Custom engine should not have installation steps, got %d", len(steps))
-	}
-}

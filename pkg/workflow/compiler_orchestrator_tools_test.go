@@ -675,13 +675,13 @@ tracker-id: TEST-123
 	assert.Equal(t, "TEST-123", result.trackerID, "Tracker ID should be extracted")
 }
 
-// TestProcessToolsAndMarkdown_CustomEngineNoTools tests custom engine behavior
+// TestProcessToolsAndMarkdown_CustomEngineNoTools tests codex engine tool processing
 func TestProcessToolsAndMarkdown_CustomEngineNoTools(t *testing.T) {
-	tmpDir := testutil.TempDir(t, "tools-custom-engine")
+	tmpDir := testutil.TempDir(t, "tools-codex-engine")
 
 	testContent := `---
 on: push
-engine: custom
+engine: codex
 tools:
   bash:
     - echo
@@ -698,7 +698,7 @@ tools:
 	frontmatterResult, err := parser.ExtractFrontmatterFromContent(testContent)
 	require.NoError(t, err)
 
-	agenticEngine, err := compiler.getAgenticEngine("custom")
+	agenticEngine, err := compiler.getAgenticEngine("codex")
 	require.NoError(t, err)
 
 	importsResult := &parser.ImportsResult{}
@@ -708,17 +708,15 @@ tools:
 		testFile,
 		tmpDir,
 		agenticEngine,
-		"custom",
+		"codex",
 		importsResult,
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Custom engine doesn't support tool allowlists - tools should be replaced
+	// Codex engine supports tool allowlists - tools should be processed
 	assert.NotEmpty(t, result.tools)
-	// Should have generated warnings
-	assert.Positive(t, compiler.warningCount, "Custom engine should generate warnings")
 }
 
 // TestProcessToolsAndMarkdown_IncludeExpansionError tests include expansion errors
