@@ -100,6 +100,28 @@ func TestReadImportedMarkdown_MissingFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "reading import", "error should describe the failure")
 }
 
+func TestReadImportedMarkdown_PathTraversal(t *testing.T) {
+	tmpDir := testutil.TempDir(t, "read-import-traversal")
+	c := &Compiler{gitRoot: tmpDir}
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"parent directory escape", "../../etc/passwd"},
+		{"absolute path", "/etc/passwd"},
+		{"dotdot only", ".."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := c.readImportedMarkdown(tt.path)
+			require.Error(t, err, "should reject path traversal")
+			assert.Contains(t, err.Error(), "escapes repository root", "error should mention traversal")
+		})
+	}
+}
+
 func TestInlinePromptFromFrontmatter(t *testing.T) {
 	tmpDir := testutil.TempDir(t, "inline-prompt-frontmatter")
 

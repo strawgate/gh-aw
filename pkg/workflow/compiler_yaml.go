@@ -723,12 +723,18 @@ func (c *Compiler) generateOutputCollectionStep(yaml *strings.Builder, data *Wor
 
 // readImportedMarkdown reads an imported file and extracts its markdown body (excluding frontmatter).
 // The importPath is expected relative to the git root (e.g. ".github/workflows/fragments/tools.md").
+// The resolved path is cleaned and verified to stay within the repository root.
 func (c *Compiler) readImportedMarkdown(importPath string) (string, error) {
+	cleanImport := filepath.Clean(filepath.FromSlash(importPath))
+	if filepath.IsAbs(cleanImport) || strings.HasPrefix(cleanImport, ".."+string(filepath.Separator)) || cleanImport == ".." {
+		return "", fmt.Errorf("import path %q escapes repository root", importPath)
+	}
+
 	var fullPath string
 	if c.gitRoot != "" {
-		fullPath = filepath.Join(c.gitRoot, importPath)
+		fullPath = filepath.Join(c.gitRoot, cleanImport)
 	} else {
-		fullPath = importPath
+		fullPath = cleanImport
 	}
 
 	content, err := os.ReadFile(fullPath)
