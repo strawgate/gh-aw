@@ -29,7 +29,7 @@
 #     - shared/mood.md
 #     - shared/reporting.md
 #
-# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"abb087b904ab58685ef91fd3a029f011f3dc02ff9f251ff9f06633819619e582"}
+# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"743012e6a439e77b6d31205b9932b4addefdf20e31f5c23e6c51706134cdf25b"}
 
 name: "Discussion Task Miner - Code Quality Improvement Agent"
 "on":
@@ -433,7 +433,7 @@ jobs:
           cat > /opt/gh-aw/safeoutputs/tools.json << 'GH_AW_SAFE_OUTPUTS_TOOLS_EOF'
           [
             {
-              "description": "Create a new GitHub issue for tracking bugs, feature requests, or tasks. Use this for actionable work items that need assignment, labeling, and status tracking. For reports, announcements, or status updates that don't require task tracking, use create_discussion instead. CONSTRAINTS: Maximum 5 issue(s) can be created. Title will be prefixed with \"[Code Quality] \". Labels [code-quality automation task-mining cookie] will be automatically added.",
+              "description": "Create a new GitHub issue for tracking bugs, feature requests, or tasks. Use this for actionable work items that need assignment, labeling, and status tracking. For reports, announcements, or status updates that don't require task tracking, use create_discussion instead. CONSTRAINTS: Maximum 5 issue(s) can be created. Title will be prefixed with \"[Code Quality] \". Labels [code-quality automation task-mining] will be automatically added.",
               "inputSchema": {
                 "additionalProperties": false,
                 "properties": {
@@ -1276,7 +1276,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"add_comment\":{\"max\":3},\"create_issue\":{\"expires\":24,\"group\":true,\"labels\":[\"code-quality\",\"automation\",\"task-mining\",\"cookie\"],\"max\":5,\"title_prefix\":\"[Code Quality] \"},\"missing_data\":{},\"missing_tool\":{}}"
+          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"add_comment\":{\"max\":3},\"create_issue\":{\"expires\":24,\"group\":true,\"labels\":[\"code-quality\",\"automation\",\"task-mining\"],\"max\":5,\"title_prefix\":\"[Code Quality] \"},\"missing_data\":{},\"missing_tool\":{}}"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
