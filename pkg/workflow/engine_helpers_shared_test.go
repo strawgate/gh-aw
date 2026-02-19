@@ -548,10 +548,11 @@ func TestRenderJSONMCPConfig(t *testing.T) {
 				},
 			},
 			expectedContent: []string{
-				"cat << GH_AW_MCP_CONFIG_EOF | bash /opt/gh-aw/actions/start_mcp_gateway.sh",
+				"cat << GH_AW_MCP_CONFIG_EOF > /tmp/test-config.json",
 				"\"mcpServers\": {",
 				"\"github\": { \"test\": true },",
 				"\"playwright\": { \"test\": true }",
+				"cat /tmp/test-config.json | bash /opt/gh-aw/actions/start_mcp_gateway.sh",
 				"GH_AW_MCP_CONFIG_EOF",
 			},
 		},
@@ -585,8 +586,9 @@ func TestRenderJSONMCPConfig(t *testing.T) {
 				},
 			},
 			expectedContent: []string{
-				"cat << GH_AW_MCP_CONFIG_EOF | bash /opt/gh-aw/actions/start_mcp_gateway.sh",
+				"cat << GH_AW_MCP_CONFIG_EOF > /tmp/filtered-config.json",
 				"\"github\": { \"filtered\": true }",
+				"cat /tmp/filtered-config.json | bash /opt/gh-aw/actions/start_mcp_gateway.sh",
 			},
 			unexpectedContent: []string{
 				"cache-memory",
@@ -618,10 +620,10 @@ func TestRenderJSONMCPConfig(t *testing.T) {
 			},
 			expectedContent: []string{
 				"GH_AW_MCP_CONFIG_EOF",
+				"cat /tmp/debug-config.json | bash /opt/gh-aw/actions/start_mcp_gateway.sh",
 			},
 			unexpectedContent: []string{
 				"echo \"DEBUG OUTPUT\"",
-				"cat /tmp/debug-config.json",
 			},
 		},
 		{
@@ -644,6 +646,7 @@ func TestRenderJSONMCPConfig(t *testing.T) {
 			},
 			expectedContent: []string{
 				"\"web-fetch\": { \"enabled\": true }",
+				"cat /tmp/web-fetch-config.json | bash /opt/gh-aw/actions/start_mcp_gateway.sh",
 			},
 		},
 	}
@@ -737,6 +740,54 @@ func TestRenderJSONMCPConfig_IsLastHandling(t *testing.T) {
 	for i, expected := range expectedIsLast {
 		if isLastValues[i] != expected {
 			t.Errorf("Call %d (%s): expected isLast=%v, got %v", i, callOrder[i], expected, isLastValues[i])
+		}
+	}
+}
+
+func TestRenderJSONMCPConfig_WithRuntimeRepoMerge(t *testing.T) {
+	tools := map[string]any{
+		"github": map[string]any{},
+	}
+	mcpTools := []string{"github"}
+
+	options := JSONMCPConfigOptions{
+		ConfigPath: "/tmp/runtime-config.json",
+		Renderers: MCPToolRenderers{
+			RenderGitHub: func(yaml *strings.Builder, githubTool any, isLast bool, workflowData *WorkflowData) {
+				yaml.WriteString("              \"github\": {}\n")
+			},
+			RenderPlaywright:       func(yaml *strings.Builder, playwrightTool any, isLast bool) {},
+			RenderCacheMemory:      func(yaml *strings.Builder, isLast bool, workflowData *WorkflowData) {},
+			RenderAgenticWorkflows: func(yaml *strings.Builder, isLast bool) {},
+			RenderSafeOutputs:      func(yaml *strings.Builder, isLast bool, workflowData *WorkflowData) {},
+			RenderWebFetch:         func(yaml *strings.Builder, isLast bool) {},
+			RenderCustomMCPConfig:  nil,
+		},
+	}
+
+	workflowData := &WorkflowData{
+		MCPFromRepo: &MCPFromRepoConfig{
+			Enabled: true,
+			Path:    ".github/mcp.json",
+		},
+	}
+
+	var yaml strings.Builder
+	err := RenderJSONMCPConfig(&yaml, tools, mcpTools, workflowData, options)
+	if err != nil {
+		t.Fatalf("RenderJSONMCPConfig failed: %v", err)
+	}
+
+	result := yaml.String()
+	expected := []string{
+		"if [ -f \"$GITHUB_WORKSPACE/.github/mcp.json\" ]; then",
+		"def extract_servers:",
+		"\"/tmp/runtime-config.json\" \"$GITHUB_WORKSPACE/.github/mcp.json\"",
+		"cat /tmp/runtime-config.json | bash /opt/gh-aw/actions/start_mcp_gateway.sh",
+	}
+	for _, token := range expected {
+		if !strings.Contains(result, token) {
+			t.Errorf("expected output to contain %q\nGot:\n%s", token, result)
 		}
 	}
 }

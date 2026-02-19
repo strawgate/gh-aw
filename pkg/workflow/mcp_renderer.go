@@ -976,12 +976,43 @@ func RenderJSONMCPConfig(
 	// Get the generated configuration
 	generatedConfig := configBuilder.String()
 
+	configPath := options.ConfigPath
+	if strings.TrimSpace(configPath) == "" {
+		configPath = "/tmp/gh-aw/mcp-config/mcp-servers.json"
+	}
+
 	delimiter := GenerateHeredocDelimiter("MCP_CONFIG")
-	// Write the configuration to the YAML output
-	yaml.WriteString("          cat << " + delimiter + " | bash /opt/gh-aw/actions/start_mcp_gateway.sh\n")
+	// Write the generated config to disk first so we can optionally merge runtime repo config.
+	yaml.WriteString("          cat << " + delimiter + " > " + configPath + "\n")
 	yaml.WriteString(generatedConfig)
 	yaml.WriteString("          " + delimiter + "\n")
 
-	// Note: Post-EOF commands are no longer needed since we pipe directly to the gateway script
+	// Optionally merge repository-local MCP configuration at invocation time.
+	// This enables dynamic MCP server registration without recompiling workflows.
+	if workflowData != nil && workflowData.MCPFromRepo != nil && workflowData.MCPFromRepo.Enabled {
+		repoConfigPath := workflowData.MCPFromRepo.Path
+		yaml.WriteString("          if [ -f \"$GITHUB_WORKSPACE/" + repoConfigPath + "\" ]; then\n")
+		yaml.WriteString("            jq -s '\n")
+		yaml.WriteString("              def extract_servers:\n")
+		yaml.WriteString("                if has(\"mcpServers\") and (.mcpServers | type == \"object\") then .mcpServers\n")
+		yaml.WriteString("                elif has(\"servers\") and (.servers | type == \"object\") then .servers\n")
+		yaml.WriteString("                else {} end;\n")
+		yaml.WriteString("              def infer_type:\n")
+		yaml.WriteString("                if has(\"type\") then .\n")
+		yaml.WriteString("                elif has(\"url\") then . + {type: \"http\"}\n")
+		yaml.WriteString("                elif has(\"command\") or has(\"container\") then . + {type: \"stdio\"}\n")
+		yaml.WriteString("                else . end;\n")
+		yaml.WriteString("              .[0] as $base |\n")
+		yaml.WriteString("              .[1] as $repo |\n")
+		yaml.WriteString("              ($repo | extract_servers | with_entries(.value |= infer_type)) as $repoServers |\n")
+		yaml.WriteString("              $base + {mcpServers: ($repoServers + ($base.mcpServers // {}))}\n")
+		yaml.WriteString("            ' \"" + configPath + "\" \"$GITHUB_WORKSPACE/" + repoConfigPath + "\" > \"" + configPath + ".merged\"\n")
+		yaml.WriteString("            mv \"" + configPath + ".merged\" \"" + configPath + "\"\n")
+		yaml.WriteString("          fi\n")
+	}
+
+	// Pipe the final (possibly merged) config into the gateway startup script.
+	yaml.WriteString("          cat " + configPath + " | bash /opt/gh-aw/actions/start_mcp_gateway.sh\n")
+
 	return nil
 }

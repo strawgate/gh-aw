@@ -17,6 +17,7 @@ var orchestratorToolsLog = logger.New("workflow:compiler_orchestrator_tools")
 // toolsProcessingResult holds the results of tools and markdown processing
 type toolsProcessingResult struct {
 	tools                 map[string]any
+	mcpFromRepo           *MCPFromRepoConfig
 	runtimes              map[string]any
 	pluginInfo            *PluginInfo // Consolidated plugin information
 	toolsTimeout          int
@@ -107,9 +108,17 @@ func (c *Compiler) processToolsAndMarkdown(result *parser.FrontmatterResult, cle
 		allMCPServers = mergedMCPServers
 	}
 
+	// Extract and remove reserved runtime config from mcp-servers before merging into tools.
+	// This keeps `mcp-servers.from-repo` as configuration metadata instead of treating it
+	// like an actual MCP tool definition.
+	mcpFromRepo, filteredMCPServers, err := extractMCPFromRepoConfig(allMCPServers)
+	if err != nil {
+		return nil, err
+	}
+
 	// Merge tools including mcp-servers
 	orchestratorToolsLog.Printf("Merging tools and MCP servers")
-	tools, err = c.mergeToolsAndMCPServers(topTools, allMCPServers, allIncludedTools)
+	tools, err = c.mergeToolsAndMCPServers(topTools, filteredMCPServers, allIncludedTools)
 	if err != nil {
 		orchestratorToolsLog.Printf("Tools merge failed: %v", err)
 		return nil, fmt.Errorf("failed to merge tools: %w", err)
@@ -328,6 +337,7 @@ func (c *Compiler) processToolsAndMarkdown(result *parser.FrontmatterResult, cle
 
 	return &toolsProcessingResult{
 		tools:                 tools,
+		mcpFromRepo:           mcpFromRepo,
 		runtimes:              runtimes,
 		pluginInfo:            pluginInfo,
 		toolsTimeout:          toolsTimeout,

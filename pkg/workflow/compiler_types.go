@@ -460,6 +460,14 @@ type WorkflowData struct {
 	ActionPinWarnings     map[string]bool      // cache of already-warned action pin failures (key: "repo@version")
 	ActionMode            ActionMode           // action mode for workflow compilation (dev, release, script)
 	HasExplicitGitHubTool bool                 // true if tools.github was explicitly configured in frontmatter
+	MCPFromRepo           *MCPFromRepoConfig   // optional runtime MCP config loaded from repository-local mcp.json
+}
+
+// MCPFromRepoConfig controls runtime loading of repository-local MCP server definitions.
+// This is configured under frontmatter `mcp-servers.from-repo`.
+type MCPFromRepoConfig struct {
+	Enabled bool   // whether runtime repo MCP loading is enabled
+	Path    string // repository-relative path to mcp.json-like file (e.g., ".github/mcp.json")
 }
 
 // BaseSafeOutputConfig holds common configuration fields for all safe output types

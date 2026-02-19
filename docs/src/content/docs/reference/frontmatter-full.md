@@ -1180,7 +1180,25 @@ engine:
 # MCP server definitions
 # (optional)
 mcp-servers:
-  {}
+  # Optional runtime loading of repository-local MCP config at invocation time.
+  # This does not change compile-time tool parsing; it merges additional servers
+  # from JSON when the workflow runs.
+  # (optional)
+  from-repo:
+    # Enable runtime loading from repository file (default: true)
+    # (optional)
+    enabled: true
+
+    # Repository-relative path to mcp config file.
+    # Supports either {"mcpServers": {...}} or {"servers": {...}}.
+    # (optional)
+    path: "mcp.json"
+
+  # Standard MCP server definitions
+  filesystem:
+    type: "stdio"
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem"]
 
 # Tools and MCP (Model Context Protocol) servers available to the AI engine for
 # GitHub API access, browser automation, file editing, and more

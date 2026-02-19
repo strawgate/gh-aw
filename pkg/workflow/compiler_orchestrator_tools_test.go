@@ -166,6 +166,57 @@ mcp-servers:
 	assert.NotEmpty(t, result.tools)
 }
 
+// TestProcessToolsAndMarkdown_MCPServersFromRepoConfig tests reserved runtime MCP config extraction.
+func TestProcessToolsAndMarkdown_MCPServersFromRepoConfig(t *testing.T) {
+	tmpDir := testutil.TempDir(t, "tools-mcp-from-repo")
+
+	testContent := `---
+on: push
+engine: copilot
+mcp-servers:
+  from-repo:
+    enabled: true
+    path: ".github/mcp.json"
+  test-server:
+    type: http
+    url: "https://example.com/mcp"
+---
+
+# Test Workflow
+`
+
+	testFile := filepath.Join(tmpDir, "test.md")
+	require.NoError(t, os.WriteFile(testFile, []byte(testContent), 0644))
+
+	compiler := NewCompiler()
+	frontmatterResult, err := parser.ExtractFrontmatterFromContent(testContent)
+	require.NoError(t, err)
+
+	agenticEngine, err := compiler.getAgenticEngine("copilot")
+	require.NoError(t, err)
+
+	importsResult := &parser.ImportsResult{}
+
+	result, err := compiler.processToolsAndMarkdown(
+		frontmatterResult,
+		testFile,
+		tmpDir,
+		agenticEngine,
+		"copilot",
+		importsResult,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.NotNil(t, result.mcpFromRepo, "expected mcpFromRepo config to be extracted")
+	assert.Equal(t, ".github/mcp.json", result.mcpFromRepo.Path)
+
+	// Reserved config should not leak into merged tools.
+	_, hasReserved := result.tools["from-repo"]
+	assert.False(t, hasReserved, "reserved mcp-servers.from-repo key should not be treated as a tool")
+}
+
 // TestProcessToolsAndMarkdown_RuntimesMerging tests runtimes merging
 func TestProcessToolsAndMarkdown_RuntimesMerging(t *testing.T) {
 	tmpDir := testutil.TempDir(t, "tools-runtimes")

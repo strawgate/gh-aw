@@ -2795,19 +2795,41 @@
           }
         }
       ],
-      "patternProperties": {
-        "^[a-zA-Z0-9_-]+$": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/stdio_mcp_tool"
+      "properties": {
+        "from-repo": {
+          "type": "object",
+          "description": "Optional runtime MCP initialization from a repository-local JSON file. When enabled, the file is read at workflow invocation time and merged into generated MCP server config.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable runtime loading of repository-local MCP server config. Default: true.",
+              "default": true
             },
-            {
-              "$ref": "#/$defs/http_mcp_tool"
+            "path": {
+              "type": "string",
+              "description": "Repository-relative path to the MCP config JSON file (supports VS Code-style 'servers' and gateway-style 'mcpServers').",
+              "default": "mcp.json",
+              "minLength": 1,
+              "examples": ["mcp.json", ".github/mcp.json", ".vscode/mcp.json"]
             }
-          ]
+          },
+          "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_-]+$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/stdio_mcp_tool"
+          },
+          {
+            "$ref": "#/$defs/http_mcp_tool"
+          }
+        ]
+      }
     },
     "tools": {
       "type": "object",

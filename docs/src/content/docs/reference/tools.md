@@ -186,6 +186,27 @@ mcp-servers:
 
 **Options**: `command` + `args` (process-based), `container` (Docker image), `url` + `headers` (HTTP endpoint), `registry` (MCP registry URI), `env` (environment variables), `allowed` (tool restrictions). See [MCPs Guide](/gh-aw/guides/mcps/) for setup.
 
+### Runtime Repo MCP Config (`mcp-servers.from-repo`)
+
+Load additional MCP servers from a repository-local JSON file at workflow **invocation time** (runtime), instead of requiring workflow recompilation for server changes.
+
+```yaml wrap
+mcp-servers:
+  from-repo:
+    enabled: true
+    path: ".github/mcp.json" # defaults to "mcp.json"
+```
+
+Supported file formats:
+
+- Gateway-style: `{ "mcpServers": { ... } }`
+- VS Code-style: `{ "servers": { ... } }`
+
+Merge behavior:
+
+- Runtime file servers are merged into generated config at invocation time.
+- If a server name exists in both places, frontmatter-defined `mcp-servers` takes precedence.
+
 ### Registry Field
 
 The `registry` field specifies the URI to an MCP server's installation location in an MCP registry. This is useful for documenting the source of an MCP server and can be used by tooling to discover and install MCP servers:

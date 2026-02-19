@@ -132,6 +132,7 @@ func (c *Compiler) buildInitialWorkflowData(
 		IncludedFiles:         toolsResult.allIncludedFiles,
 		ImportInputs:          importsResult.ImportInputs,
 		Tools:                 toolsResult.tools,
+		MCPFromRepo:           toolsResult.mcpFromRepo,
 		ParsedTools:           NewTools(toolsResult.tools),
 		Runtimes:              toolsResult.runtimes,
 		PluginInfo:            toolsResult.pluginInfo,
