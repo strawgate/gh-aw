@@ -66,10 +66,6 @@ tools:
 
 ### GitHub Toolsets
 
-> [!TIP]
-> Use Toolsets Instead of Allowed
-> [Toolsets](/gh-aw/reference/glossary/#toolsets) (capability collections) provide a stable API across MCP server versions and automatically include new related tools. See [Migration from Allowed to Toolsets](/gh-aw/guides/mcps/#migration-from-allowed-to-toolsets) for guidance.
-
 Enable specific API groups to improve tool selection and reduce context size:
 
 ```yaml wrap
@@ -86,18 +82,11 @@ tools:
 > GitHub Actions Compatibility
 > `toolsets: [default]` expands to `[context, repos, issues, pull_requests]` (excluding `users`) since `GITHUB_TOKEN` lacks user permissions. Use a PAT for the full default set.
 
-**Common combinations**: `[default]` (read-only), `[default, discussions]` (issue/PR), `[default, actions]` (CI/CD), `[default, code_security]` (security), `[all]` (full access)
-
-#### Toolset Contents
-
 Key toolsets: **context** (user/team info), **repos** (repository operations, code search, commits, releases), **issues** (issue management, comments, reactions), **pull_requests** (PR operations), **actions** (workflows, runs, artifacts), **code_security** (scanning alerts), **discussions**, **labels**.
 
-> [!TIP]
-> The `allowed:` field is not recommended for GitHub tools since tool names may change between versions. Use `toolsets:` for stability. For custom MCP servers, `allowed:` remains the standard approach.
+### Remote vs Local Mode
 
-### Modes and Restrictions
-
-**Remote Mode**: Use hosted MCP server for faster startup (no Docker). Requires `GH_AW_GITHUB_TOKEN`:
+**Remote Mode**: Use hosted MCP server for faster startup (no Docker). Requires [`GH_AW_GITHUB_TOKEN`](/gh-aw/reference/auth/#gh_aw_github_token):
 
 ```yaml wrap
 tools:
@@ -105,11 +94,18 @@ tools:
     mode: remote  # Default: "local" (Docker)
 ```
 
-Setup: `gh aw secrets set GH_AW_GITHUB_TOKEN --value "<your-pat>"`
+**Local Mode**: Use Docker container for isolation. Requires `docker` tool and appropriate permissions:
 
-**Read-Only**: Default behavior; restricts to read operations unless write operations configured.
+```yaml wrap
+tools:
+  docker:
+  github:
+    mode: local
+```
 
-**Lockdown Mode**: Security feature that filters public repository content to only show issues, PRs, and comments from users with push access. Automatically enabled for public repositories when using custom tokens. See [Lockdown Mode](/gh-aw/reference/lockdown-mode/) for complete documentation.
+### Lockdown Mode for Public Repositories
+
+Lockdown Mode is a security feature that filters public repository content to only show issues, PRs, and comments from users with push access. Automatically enabled for public repositories when using custom tokens. See [Lockdown Mode](/gh-aw/reference/lockdown-mode/) for complete documentation.
 
 ```yaml wrap
 tools:
@@ -118,59 +114,17 @@ tools:
     lockdown: false  # Disable (for workflows processing all user input)
 ```
 
-See [Authentication](/gh-aw/reference/auth/) for security implications and authentication options.
-
 ### GitHub App Authentication
 
-Use GitHub App tokens for enhanced security with short-lived, automatically-revoked credentials:
+Use GitHub App tokens for enhanced security with short-lived, automatically-revoked credentials. GitHub Apps provide on-demand token minting at workflow start, automatic revocation at workflow end (even on failure), and permissions automatically mapped from your job's `permissions` field.
 
-```yaml wrap
-tools:
-  github:
-    mode: remote
-    toolsets: [repos, issues, pull_requests]
-    app:
-      app-id: ${{ vars.APP_ID }}
-      private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      owner: "my-org"                    # Optional: defaults to current repo owner
-      repositories: ["repo1", "repo2"]   # Optional: scope to specific repos
-```
+See [Using a GitHub App for Authentication](/gh-aw/reference/auth/#using-a-github-app-for-authentication) for complete setup, configuration details, and security benefits.
 
-**Repository scoping options**:
-
-- `repositories: ["*"]` - Org-wide access (all repos in the installation)
-- `repositories: ["repo1", "repo2"]` - Specific repositories only
-- Omit `repositories` field - Current repository only (default)
-
-**Shared workflow pattern** (recommended):
-
-```yaml wrap
-imports:
-  - shared/github-mcp-app.md  # Centralized GitHub App configuration
-
-permissions:
-  contents: read
-  issues: write
-
-tools:
-  github:
-    toolsets: [repos, issues]
-```
-
-**Benefits**:
-- On-demand token minting at workflow start
-- Automatic token revocation at workflow end (even on failure)
-- Permissions automatically mapped from agent job `permissions` field
-- Works with both local (Docker) and remote (hosted) modes
-- Isolated from safe-outputs token configuration
-
-See [GitHub App Tokens for GitHub MCP Server](/gh-aw/reference/auth/#gh_aw_github_mcp_server_token) for complete setup and configuration details.
-
-**Token precedence**: GitHub App → `github-token` → `GH_AW_GITHUB_MCP_SERVER_TOKEN` → `GH_AW_GITHUB_TOKEN` → `GITHUB_TOKEN`
+**Token precedence**: GitHub App → `github-token` → [`GH_AW_GITHUB_MCP_SERVER_TOKEN`](/gh-aw/reference/auth/#gh_aw_github_mcp_server_token) → [`GH_AW_GITHUB_TOKEN`](/gh-aw/reference/auth/#gh_aw_github_token) → `GITHUB_TOKEN`
 
 ## Playwright Tool (`playwright:`)
 
-Enables containerized browser automation with domain-based access control:
+Configure Playwright for browser automation and testing:
 
 ```yaml wrap
 tools:
@@ -196,10 +150,7 @@ tools:
   agentic-workflows:
 ```
 
-> [!NOTE]
-> The `logs` and `audit` tools require the workflow actor to have **write, maintain, or admin** repository role. Other tools (status, compile, mcp-inspect, add, update, fix) are available to all users.
-
-See [MCP Server](/gh-aw/reference/gh-aw-as-mcp-server/#using-as-agentic-workflows-tool) for available operations.
+See [MCP Server](/gh-aw/reference/gh-aw-as-mcp-server/) for available operations.
 
 ### Cache Memory (`cache-memory:`)
 
@@ -248,6 +199,7 @@ mcp-servers:
 ```
 
 **When to use**:
+
 - **Document server source**: Include `registry` to indicate where the MCP server is published
 - **Registry-aware tooling**: Some tools may use the registry URI for discovery and version management
 - **Both stdio and HTTP servers**: Works with both `command`-based stdio servers and `url`-based HTTP servers

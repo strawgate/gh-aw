@@ -3,6 +3,7 @@
 package main
 
 import (
+	"strings"
 	"syscall/js"
 
 	"github.com/github/gh-aw/pkg/parser"
@@ -15,12 +16,13 @@ func main() {
 }
 
 // compileWorkflow is the JS-callable function.
-// Usage: compileWorkflow(markdownString, filesObject?) → Promise<{yaml, warnings, error}>
+// Usage: compileWorkflow(markdownString, filesObject?, filename?) → Promise<{yaml, warnings, error}>
 //
 // Arguments:
 //   - markdownString: the main workflow markdown content
 //   - filesObject (optional): a JS object mapping file paths to content strings,
 //     used for import resolution (e.g. {"shared/tools.md": "---\ntools:..."})
+//   - filename (optional): the source filename (e.g. "my-workflow.md"), defaults to "workflow.md"
 func compileWorkflow(this js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return newRejectedPromise("compileWorkflow requires at least 1 argument: markdown string")
@@ -34,6 +36,12 @@ func compileWorkflow(this js.Value, args []js.Value) any {
 		files = jsObjectToFileMap(args[1])
 	}
 
+	// Extract optional filename from third argument
+	filename := "workflow.md"
+	if len(args) >= 3 && !args[2].IsNull() && !args[2].IsUndefined() {
+		filename = args[2].String()
+	}
+
 	var handler js.Func
 	handler = js.FuncOf(func(this js.Value, promiseArgs []js.Value) any {
 		resolve := promiseArgs[0]
@@ -42,7 +50,7 @@ func compileWorkflow(this js.Value, args []js.Value) any {
 		go func() {
 			defer handler.Release()
 
-			result, err := doCompile(markdown, files)
+			result, err := doCompile(markdown, files, filename)
 			if err != nil {
 				reject.Invoke(js.Global().Get("Error").New(err.Error()))
 				return
@@ -73,25 +81,29 @@ func jsObjectToFileMap(obj js.Value) map[string][]byte {
 }
 
 // doCompile performs the actual compilation entirely in memory.
-func doCompile(markdown string, files map[string][]byte) (js.Value, error) {
+func doCompile(markdown string, files map[string][]byte, filename string) (js.Value, error) {
 	// Set up virtual filesystem for import resolution
 	if files != nil {
 		parser.SetVirtualFiles(files)
 		defer parser.ClearVirtualFiles()
 	}
 
+	// Derive workflow identifier from filename for fuzzy cron schedule scattering
+	identifier := strings.TrimSuffix(filename, ".md")
+
 	compiler := workflow.NewCompiler(
 		workflow.WithNoEmit(true),
 		workflow.WithSkipValidation(true),
+		workflow.WithWorkflowIdentifier(identifier),
 	)
 
 	// Parse directly from string — no temp files needed
-	workflowData, err := compiler.ParseWorkflowString(markdown, "workflow.md")
+	workflowData, err := compiler.ParseWorkflowString(markdown, filename)
 	if err != nil {
 		return js.Undefined(), err
 	}
 
-	yamlContent, err := compiler.CompileToYAML(workflowData, "workflow.md")
+	yamlContent, err := compiler.CompileToYAML(workflowData, filename)
 	if err != nil {
 		return js.Undefined(), err
 	}

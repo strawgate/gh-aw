@@ -295,7 +295,6 @@ func TestEngineCapabilityVariety(t *testing.T) {
 	copilot, _ := registry.GetEngine("copilot")
 	claude, _ := registry.GetEngine("claude")
 	codex, _ := registry.GetEngine("codex")
-	custom, _ := registry.GetEngine("custom")
 
 	// Test that capabilities differ across engines
 	t.Run("copilot capabilities", func(t *testing.T) {
@@ -323,14 +322,6 @@ func TestEngineCapabilityVariety(t *testing.T) {
 		assert.True(t, codex.SupportsWebSearch())
 		assert.True(t, codex.SupportsFirewall())
 		assert.False(t, codex.IsExperimental())
-	})
-
-	t.Run("custom capabilities", func(t *testing.T) {
-		assert.False(t, custom.SupportsToolsAllowlist())
-		assert.True(t, custom.SupportsMaxTurns())
-		assert.False(t, custom.SupportsWebFetch())
-		assert.False(t, custom.SupportsWebSearch())
-		assert.False(t, custom.IsExperimental())
 	})
 }
 

@@ -172,9 +172,9 @@ Run agentic workflows from a separate "side" repository that targets your main c
 
 See [SideRepoOps](/gh-aw/patterns/siderepoops/) for complete setup and usage documentation.
 
-### Allowed GitHub References
+### Text Sanitization
 
-Control which GitHub repository references (`#123`, `owner/repo#456`) are allowed in workflow output. When configured, references to unlisted repositories are escaped with backticks to prevent GitHub from creating timeline items.
+Control which GitHub repository references (`#123`, `owner/repo#456`) are allowed in workflow output text. When configured, references to unlisted repositories are escaped with backticks to prevent GitHub from creating timeline items.
 
 ```yaml wrap
 safe-outputs:
@@ -183,36 +183,7 @@ safe-outputs:
     target-repo: "my-org/main-repo"
 ```
 
-**Configuration options**:
-
-- `[]` - Escape all references (prevents all timeline items)
-- `["repo"]` - Allow only the target repository's references
-- `["repo", "owner/other-repo"]` - Allow specific repositories
-- Not specified (default) - All references allowed
-
-**How it works**: References like `#123` become `` `#123` `` and `other/repo#456` becomes `` `other/repo#456` ``, preventing timeline clutter while preserving the information.
-
-**Use cases**:
-
-- **SideRepoOps**: Prevent automation from cluttering main repository timeline
-- **Cross-repository operations**: Avoid unwanted cross-references
-- **Clean automation**: Maintain readable issue/PR timelines
-- **Reporting workflows**: Share information without creating link noise
-
-**Example with SideRepoOps**:
-
-```yaml wrap
-safe-outputs:
-  github-token: ${{ secrets.MAIN_REPO_PAT }}
-  allowed-github-references: []  # Escape all references
-  create-issue:
-    target-repo: "my-org/main-repo"
-    title-prefix: "[automation] "
-```
-
-This prevents the side repository's automation from creating "mentioned in..." entries in your main repository's issues and pull requests.
-
-See [Safe Outputs Reference](/gh-aw/reference/safe-outputs/#security-and-sanitization) for complete documentation.
+See [Safe Outputs Reference](/gh-aw/reference/safe-outputs/) for complete documentation.
 
 ### Use Discussions Instead of Issues
 

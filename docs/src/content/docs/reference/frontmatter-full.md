@@ -127,55 +127,6 @@ on:
     events: []
       # Array items: GitHub Actions event name.
 
-  # DEPRECATED: Use 'slash_command' instead. Special command trigger for /command
-  # workflows (e.g., '/my-bot' in issue comments). Creates conditions to match slash
-  # commands automatically.
-  # (optional)
-  # This field supports multiple formats (oneOf):
-
-  # Option 1: Null command configuration - defaults to using the workflow filename
-  # (without .md extension) as the command name
-  command: null
-
-  # Option 2: Command name as a string (shorthand format, e.g., 'customname' for
-  # '/customname' triggers). Command names must not start with '/' as the slash is
-  # automatically added when matching commands.
-  command: "example-value"
-
-  # Option 3: Command configuration object with custom command name
-  command:
-    # Name of the slash command that triggers the workflow (e.g., '/deploy', '/test').
-    # Used for command-based workflow activation.
-    # (optional)
-    # This field supports multiple formats (oneOf):
-
-    # Option 1: Custom command name for slash commands (e.g., 'helper-bot' for
-    # '/helper-bot' triggers). Command names must not start with '/' as the slash is
-    # automatically added when matching commands. Defaults to workflow filename
-    # without .md extension if not specified.
-    name: "My Workflow"
-
-    # Option 2: Array of command names that trigger this workflow (e.g., ['cmd.add',
-    # 'cmd.remove'] for '/cmd.add' and '/cmd.remove' triggers). Each command name must
-    # not start with '/'.
-    name: []
-      # Array items: Command name without leading slash
-
-    # Events where the command should be active. Default is all comment-related events
-    # ('*'). Use GitHub Actions event names.
-    # (optional)
-    # This field supports multiple formats (oneOf):
-
-    # Option 1: Single event name or '*' for all events. Use GitHub Actions event
-    # names: 'issues', 'issue_comment', 'pull_request_comment', 'pull_request',
-    # 'pull_request_review_comment', 'discussion', 'discussion_comment'.
-    events: "*"
-
-    # Option 2: Array of event names where the command should be active (requires at
-    # least one). Use GitHub Actions event names.
-    events: []
-      # Array items: GitHub Actions event name.
-
   # Push event trigger that runs the workflow when code is pushed to the repository
   # (optional)
   # This field supports multiple formats (oneOf):
@@ -807,7 +758,7 @@ features:
 
 # Secret values passed to workflow execution. Secrets can be defined as simple
 # strings (GitHub Actions expressions) or objects with 'value' and 'description'
-# properties. Typically used to provide secrets to MCP servers or custom engines.
+# properties. Typically used to provide secrets to MCP servers or workflow components.
 # Note: For passing secrets to reusable workflows, use the jobs.<job_id>.secrets
 # field instead.
 # (optional)
@@ -908,32 +859,23 @@ network:
     # '*.example.com' (matches sub.example.com, deep.nested.example.com, and
     # example.com itself) and ecosystem names like 'python', 'node'.
 
-# Sandbox configuration for AI engines. Controls agent sandbox (AWF or Sandbox
+# Sandbox configuration for AI engines. Controls coding agent sandbox (AWF or Sandbox
 # Runtime) and MCP gateway. The MCP gateway is always enabled and cannot be
 # disabled.
 # (optional)
 # This field supports multiple formats (oneOf):
 
-# Option 1: Legacy string format for sandbox type: 'default' for no sandbox,
-# 'sandbox-runtime' or 'srt' for Anthropic Sandbox Runtime, 'awf' for Agent
-# Workflow Firewall
-sandbox: "default"
-
 # Option 2: Object format for full sandbox configuration with agent and mcp
 # options
 sandbox:
-  # Legacy sandbox type field (use agent instead)
-  # (optional)
-  type: "default"
-
   # Agent sandbox type: 'awf' uses AWF (Agent Workflow Firewall), 'srt' uses
-  # Anthropic Sandbox Runtime, or false to disable agent sandbox. Defaults to 'awf'
-  # if not specified. Note: Disabling the agent sandbox (false) removes firewall
+  # Anthropic Sandbox Runtime, or false to disable coding agent sandbox. Defaults to 'awf'
+  # if not specified. Note: Disabling the coding agent sandbox (false) removes firewall
   # protection but keeps the MCP gateway enabled.
   # (optional)
   # This field supports multiple formats (oneOf):
 
-  # Option 1: Set to false to disable the agent sandbox (firewall). Warning: This
+  # Option 1: Set to false to disable the coding agent sandbox (firewall). Warning: This
   # removes firewall protection but keeps the MCP gateway enabled. Not allowed in
   # strict mode.
   agent: true
@@ -948,10 +890,6 @@ sandbox:
     # Firewall, 'srt' for Sandbox Runtime
     # (optional)
     id: "awf"
-
-    # Legacy: Sandbox type to use (use 'id' instead)
-    # (optional)
-    type: "awf"
 
     # Custom command to replace the default AWF or SRT installation. For AWF: 'docker
     # run my-custom-awf-image'. For SRT: 'docker run my-custom-srt-wrapper'
@@ -1007,43 +945,6 @@ sandbox:
       # Enable weaker nested sandbox mode (recommended: true for Docker access)
       # (optional)
       enableWeakerNestedSandbox: true
-
-  # Legacy custom Sandbox Runtime configuration (use agent.config instead). Note:
-  # Network configuration is controlled by the top-level 'network' field, not here.
-  # (optional)
-  config:
-    # Filesystem access control configuration for sandboxed workflows. Controls
-    # read/write permissions and path restrictions for file operations.
-    # (optional)
-    filesystem:
-      # Array of path patterns that deny read access in the sandboxed environment. Takes
-      # precedence over other read permissions.
-      # (optional)
-      denyRead: []
-        # Array of strings
-
-      # Array of path patterns that allow write access in the sandboxed environment.
-      # Paths outside these patterns are read-only.
-      # (optional)
-      allowWrite: []
-        # Array of strings
-
-      # Array of path patterns that deny write access in the sandboxed environment.
-      # Takes precedence over other write permissions.
-      # (optional)
-      denyWrite: []
-        # Array of strings
-
-    # When true, log sandbox violations without blocking execution. Useful for
-    # debugging and gradual enforcement of sandbox policies.
-    # (optional)
-    ignoreViolations:
-      {}
-
-    # When true, allows nested sandbox processes to run with relaxed restrictions.
-    # Required for certain containerized tools that spawn subprocesses.
-    # (optional)
-    enableWeakerNestedSandbox: true
 
   # MCP Gateway configuration for routing MCP server calls through a unified HTTP
   # gateway. Requires the 'mcp-gateway' feature flag to be enabled. Per MCP Gateway
@@ -1229,8 +1130,8 @@ engine:
   env:
     {}
 
-  # Custom GitHub Actions steps for 'custom' engine. Define your own deterministic
-  # workflow steps instead of using AI processing.
+  # Custom GitHub Actions steps for extended engine configuration. Define additional
+  # workflow steps to run alongside AI processing.
   # (optional)
   steps: []
     # Array items:
@@ -1469,7 +1370,7 @@ tools:
     args: []
       # Array of strings
 
-  # GitHub Agentic Workflows MCP server for workflow introspection and analysis.
+  # GH-AW as an MCP server for workflow introspection and analysis.
   # Provides tools for checking status, compiling workflows, downloading logs, and
   # auditing runs.
   # (optional)
@@ -1905,40 +1806,6 @@ safe-outputs:
   # workflows to spawn new agent sessions for follow-up work.
   # (optional)
   # This field supports multiple formats (oneOf):
-
-  # Option 1: DEPRECATED: Use 'create-agent-session' instead. Configuration for
-  # creating GitHub Copilot coding agent sessions from agentic workflow output using gh
-  # agent-task CLI. The main job does not need write permissions.
-  create-agent-task:
-    # Base branch for the agent session pull request. Defaults to the current branch
-    # or repository default branch.
-    # (optional)
-    base: "example-value"
-
-    # Maximum number of agent sessions to create (default: 1)
-    # (optional)
-    max: 1
-
-    # Target repository in format 'owner/repo' for cross-repository agent session
-    # creation. Takes precedence over trial target repo settings.
-    # (optional)
-    target-repo: "example-value"
-
-    # List of additional repositories in format 'owner/repo' that agent sessions can
-    # be created in. When specified, the agent can use a 'repo' field in the output to
-    # specify which repository to create the agent session in. The target repository
-    # (current or target-repo) is always implicitly allowed.
-    # (optional)
-    allowed-repos: []
-      # Array of strings
-
-    # GitHub token to use for this specific output type. Overrides global github-token
-    # if specified.
-    # (optional)
-    github-token: "${{ secrets.GITHUB_TOKEN }}"
-
-  # Option 2: Enable agent session creation with default configuration
-  create-agent-task: null
 
   # Enable creation of GitHub Copilot coding agent sessions from workflow output. Allows
   # workflows to start interactive agent conversations.
@@ -2699,6 +2566,11 @@ safe-outputs:
     # Maximum number of reviews to submit (default: 1)
     # (optional)
     max: 1
+
+    # Target PR for the review: 'triggering' (default), '*' (any PR), or explicit PR number.
+    # Required when workflow is not triggered by a pull request (e.g. workflow_dispatch).
+    # (optional)
+    target: "triggering"
 
     # Controls whether AI-generated footer is added to the review body. When false,
     # the footer is omitted. Defaults to true.

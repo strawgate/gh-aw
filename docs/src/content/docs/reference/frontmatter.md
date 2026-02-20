@@ -22,9 +22,7 @@ tools:
 
 ## Frontmatter Elements
 
-The frontmatter combines standard GitHub Actions properties (`on`, `permissions`, `run-name`, `runs-on`, `timeout-minutes`, `concurrency`, `env`, `environment`, `container`, `services`, `if`, `steps`, `cache`) with GitHub Agentic Workflows-specific elements (`description`, `source`, `imports`, `engine`, `strict`, `roles`, `features`, `plugins`, `runtimes`, `safe-inputs`, `safe-outputs`, `network`, `tools`).
-
-Tool configurations (such as `bash`, `edit`, `github`, `web-fetch`, `web-search`, `playwright`, `cache-memory`, and custom [Model Context Protocol](/gh-aw/reference/glossary/#mcp-model-context-protocol) (MCP) [servers](/gh-aw/reference/glossary/#mcp-server)) are specified under the `tools:` key. Custom inline tools can be defined with the [`safe-inputs:`](/gh-aw/reference/safe-inputs/) (custom tools defined inline) key. See [Tools](/gh-aw/reference/tools/) and [Safe Inputs](/gh-aw/reference/safe-inputs/) for complete documentation.
+Below is a comprehensive reference to all available frontmatter fields for GitHub Agentic Workflows.
 
 ### Trigger Events (`on:`)
 
@@ -78,6 +76,7 @@ metadata:
 ```
 
 **Constraints:**
+
 - Keys: 1-64 characters
 - Values: Maximum 1024 characters
 - Only string values are supported
@@ -93,6 +92,7 @@ Plugin support is experimental and may change in future releases. Using plugins 
 Specifies plugins to install before workflow execution. Plugins are installed using engine-specific CLI commands (`copilot plugin install`, `claude plugin install`, `codex plugin install`).
 
 **Array format** (simple):
+
 ```yaml wrap
 plugins:
   - github/test-plugin
@@ -100,6 +100,7 @@ plugins:
 ```
 
 **Object format** (with custom token):
+
 ```yaml wrap
 plugins:
   repos:
@@ -109,9 +110,10 @@ plugins:
 ```
 
 **Token precedence** for plugin installation (highest to lowest):
+
 1. Custom `plugins.github-token` from object format
 2. `${{ secrets.GH_AW_PLUGINS_TOKEN }}`
-3. `${{ secrets.GH_AW_GITHUB_TOKEN }}`
+3. [`${{ secrets.GH_AW_GITHUB_TOKEN }}`](/gh-aw/reference/auth/#gh_aw_github_token)
 4. `${{ secrets.GITHUB_TOKEN }}` (default)
 
 Each plugin repository must be specified in `org/repo` format. The compiler generates installation steps that run after the engine CLI is installed but before workflow execution begins.
@@ -123,6 +125,7 @@ Override default runtime versions for languages and tools used in workflows. The
 **Format**: Object with runtime name as key and configuration as value
 
 **Fields per runtime**:
+
 - `version`: Runtime version string (required)
 - `action-repo`: Custom GitHub Actions setup action (optional, overrides default)
 - `action-version`: Version of the setup action (optional, overrides default)
@@ -146,6 +149,7 @@ Override default runtime versions for languages and tools used in workflows. The
 **Examples**:
 
 Override Node.js version:
+
 ```yaml wrap
 runtimes:
   node:
@@ -153,6 +157,7 @@ runtimes:
 ```
 
 Use specific Python version with custom setup action:
+
 ```yaml wrap
 runtimes:
   python:
@@ -162,6 +167,7 @@ runtimes:
 ```
 
 Multiple runtime overrides:
+
 ```yaml wrap
 runtimes:
   node:
@@ -175,6 +181,7 @@ runtimes:
 **Default Behavior**: If not specified, workflows use default runtime versions as defined in the system. The compiler automatically detects which runtimes are needed based on tool configurations (e.g., `bash: ["node"]`, `bash: ["python"]`) and workflow steps.
 
 **Use Cases**:
+
 - Pin specific runtime versions for reproducibility
 - Use preview/beta runtime versions for testing
 - Use custom setup actions (forks, enterprise mirrors)
@@ -211,40 +218,59 @@ The compiler validates workflows have sufficient permissions for their configure
 
 **Strict mode** (`gh aw compile --strict`): Treats under-provisioned permissions as compilation errors. Use for production workflows requiring enhanced security validation.
 
-### Repository Access Roles (`roles:`)
+### Repository Access Roles (`on.roles:`)
 
 Controls who can trigger agentic workflows based on repository permission level. Defaults to `[admin, maintainer, write]`.
 
 ```yaml wrap
-roles: [admin, maintainer, write]  # Default
-roles: all                         # Allow any user (⚠️ use with caution)
+on:
+  issues:
+    types: [opened]
+  roles: [admin, maintainer, write]  # Default
+```
+
+```yaml wrap
+on:
+  workflow_dispatch:
+  roles: all                         # Allow any user (⚠️ use with caution)
 ```
 
 Available roles: `admin`, `maintainer`, `write`, `read`, `all`. Workflows with unsafe triggers (`push`, `issues`, `pull_request`) automatically enforce permission checks. Failed checks cancel the workflow with a warning.
 
-### Bot Filtering (`bots:`)
+> [!TIP]
+> Run `gh aw fix workflow.md --write` to automatically migrate top-level `roles:` to `on.roles:` using the built-in codemod.
+
+### Bot Filtering (`on.bots:`)
 
 Configure which GitHub bot accounts can trigger workflows. Useful for allowing specific automation bots while maintaining security controls.
 
 ```yaml wrap
-bots: 
-  - "dependabot[bot]"
-  - "renovate[bot]"
-  - "agentic-workflows-dev[bot]"
+on:
+  issues:
+    types: [opened]
+  bots:
+    - "dependabot[bot]"
+    - "renovate[bot]"
+    - "agentic-workflows-dev[bot]"
 ```
 
 **Behavior**:
+
 - When specified, only the listed bot accounts can trigger the workflow
 - The bot must be active (installed) on the repository to trigger the workflow
-- Combine with `roles:` for comprehensive access control
+- Combine with `on.roles:` for comprehensive access control
 - Applies to all workflow triggers (`pull_request`, `issues`, etc.)
-- When `roles: all` is set, bot filtering is not enforced
+- When `on.roles: all` is set, bot filtering is not enforced
 
 **Common bot names**:
+
 - `dependabot[bot]` - GitHub Dependabot for dependency updates
 - `renovate[bot]` - Renovate bot for automated dependency management
 - `github-actions[bot]` - GitHub Actions bot
 - `agentic-workflows-dev[bot]` - Development bot for testing workflows
+
+> [!TIP]
+> Run `gh aw fix workflow.md --write` to automatically migrate top-level `bots:` to `on.bots:` using the built-in codemod.
 
 ### Skip Roles (`on.skip-roles`)
 
@@ -260,6 +286,7 @@ on:
 **Available roles**: `admin`, `maintainer`, `write`, `read`
 
 **Behavior**:
+
 - Workflow is cancelled during pre-activation when triggered by users with listed roles
 - Check runs before agent execution to avoid unnecessary compute costs
 - Merged as union when importing workflows (all skip-roles from imported workflows are combined)
@@ -281,12 +308,14 @@ on:
 **Bot name matching**: Automatic flexible matching handles bot names with or without the `[bot]` suffix. For example, specifying `github-actions` matches both `github-actions` and `github-actions[bot]` actors automatically.
 
 **Behavior**:
+
 - Workflow is cancelled during pre-activation when `github.actor` matches any listed actor
 - Check runs before agent execution to avoid unnecessary compute costs
 - Merged as union when importing workflows (all skip-bots from imported workflows are combined)
 - Accepts both user accounts and bot accounts
 
 **String or array format**:
+
 ```yaml wrap
 # Single bot
 skip-bots: github-actions
@@ -296,6 +325,7 @@ skip-bots: [github-actions, copilot, renovate]
 ```
 
 **Example use cases**:
+
 - Skip AI workflows when triggered by automation bots to avoid bot-to-bot interactions
 - Prevent workflow loops where one workflow's output triggers another
 - Exempt specific known bots from content checks or policy enforcement
@@ -310,6 +340,7 @@ strict: false  # Disable for development/testing
 ```
 
 **Enforcement areas:**
+
 1. Refuses write permissions (`contents:write`, `issues:write`, `pull-requests:write`) - use [safe-outputs](/gh-aw/reference/safe-outputs/) instead
 2. Requires explicit [network configuration](/gh-aw/reference/network/)
 3. Refuses wildcard `*` in `network.allowed` domains
@@ -321,6 +352,7 @@ strict: false  # Disable for development/testing
 When strict mode rejects individual ecosystem domains, helpful error messages suggest the appropriate ecosystem identifier (e.g., "Did you mean: 'pypi.org' belongs to ecosystem 'python'?").
 
 **Configuration:**
+
 - **Frontmatter**: `strict: true/false` (per-workflow)
 - **CLI flag**: `gh aw compile --strict` (all workflows, overrides frontmatter)
 
@@ -335,10 +367,6 @@ features:
   my-experimental-feature: true
   action-mode: "script"
 ```
-
-> [!NOTE]
-> Firewall Configuration
-> The `features.firewall` field has been removed. The agent sandbox is now mandatory and defaults to AWF (Agent Workflow Firewall). See [Sandbox Configuration](/gh-aw/reference/sandbox/) for details.
 
 #### Action Mode (`features.action-mode`)
 
@@ -415,15 +443,12 @@ Enables automatic issue creation, comment posting, and other safe outputs. See [
 ### Run Configuration (`run-name:`, `runs-on:`, `timeout-minutes:`)
 
 Standard GitHub Actions properties:
+
 ```yaml wrap
 run-name: "Custom workflow run name"  # Defaults to workflow name
 runs-on: ubuntu-latest               # Defaults to ubuntu-latest (main job only)
 timeout-minutes: 30                  # Defaults to 20 minutes
 ```
-
-> [!CAUTION]
-> Breaking Change: `timeout_minutes` Removed
-> The underscore variant `timeout_minutes` has been removed and is no longer supported. Use `timeout-minutes` (with hyphen) instead. Workflows using `timeout_minutes` will fail compilation with an "Unknown property" error.
 
 ### Workflow Concurrency Control (`concurrency:`)
 
@@ -436,14 +461,18 @@ Standard GitHub Actions `env:` syntax for workflow-level environment variables:
 ```yaml wrap
 env:
   CUSTOM_VAR: "value"
-  SECRET_VAR: ${{ secrets.MY_SECRET }}
 ```
 
 Environment variables can be defined at multiple scopes (workflow, job, step, engine, safe-outputs, etc.) with clear precedence rules. See [Environment Variables](/gh-aw/reference/environment-variables/) for complete documentation on all 13 env scopes and precedence order.
 
+> [!WARNING]
+> Do not use `${{ secrets.* }}` expressions in the workflow-level `env:` section. Environment variables defined here are passed directly to the agent container, which means secret values would be visible to the AI model. In strict mode, this is a compilation error. In non-strict mode, it emits a warning.
+>
+> Use engine-specific secret configuration instead of the `env:` section to pass secrets securely.
+
 ## Secrets (`secrets:`)
 
-Defines secret values passed to workflow execution. Secrets are typically used to provide sensitive configuration to MCP servers, custom engines, or workflow components. Values must be GitHub Actions expressions that reference secrets (e.g., `${{ secrets.API_KEY }}`).
+Defines secret values passed to workflow execution. Secrets are typically used to provide sensitive configuration to MCP servers or workflow components. Values must be GitHub Actions expressions that reference secrets (e.g., `${{ secrets.API_KEY }}`).
 
 ```yaml wrap
 secrets:
@@ -528,8 +557,7 @@ steps:
 
 Use custom steps to precompute data, filter triggers, or prepare context for AI agents. See [Deterministic & Agentic Patterns](/gh-aw/guides/deterministic-agentic-patterns/) for combining computation with AI reasoning.
 
-> [!CAUTION]
-> Security Notice: Custom steps run OUTSIDE the firewall sandbox. These steps execute with standard GitHub Actions security but do NOT have the network egress controls that protect the agent job. Do not run agentic compute or untrusted AI execution in custom steps - use them only for deterministic data preparation, preprocessing, or filtering.
+Custom steps run outside the firewall sandbox. These steps execute with standard GitHub Actions security.
 
 ## Post-Execution Steps (`post-steps:`)
 
@@ -548,8 +576,7 @@ post-steps:
 
 Useful for artifact uploads, summaries, cleanup, or triggering downstream workflows.
 
-> [!CAUTION]
-> Security Notice: Post-execution steps run OUTSIDE the firewall sandbox. These steps execute with standard GitHub Actions security but do NOT have the network egress controls that protect the agent job. Do not run agentic compute or untrusted AI execution in post-steps - use them only for deterministic cleanup, artifact uploads, or notifications.
+Post-execution steps run OUTSIDE the firewall sandbox. These steps execute with standard GitHub Actions security.
 
 ## Custom Jobs (`jobs:`)
 
@@ -569,8 +596,7 @@ jobs:
 
 The agentic execution job waits for all custom jobs to complete. Custom jobs can share data through artifacts or job outputs. See [Deterministic & Agentic Patterns](/gh-aw/guides/deterministic-agentic-patterns/) for multi-job workflows.
 
-> [!CAUTION]
-> Security Notice: Custom jobs run OUTSIDE the firewall sandbox. These jobs execute with standard GitHub Actions security but do NOT have the network egress controls that protect the agent job. Do not run agentic compute or untrusted AI execution in custom jobs - use them only for deterministic preprocessing, data fetching, or static analysis.
+Custom jobs run outside the firewall sandbox. These jobs execute with standard GitHub Actions security.
 
 ### Job Outputs
 
@@ -597,6 +623,7 @@ Job outputs must be string values.
 Cache configuration using standard GitHub Actions `actions/cache` syntax:
 
 Single cache:
+
 ```yaml wrap
 cache:
   key: node-modules-${{ hashFiles('package-lock.json') }}

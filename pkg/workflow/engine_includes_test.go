@@ -377,7 +377,7 @@ This should fail due to multiple engine specifications in includes.
 	}
 }
 
-// TestImportedEngineWithCustomSteps tests importing a custom engine configuration with steps
+// TestImportedEngineWithCustomSteps tests importing a codex engine configuration with top-level steps
 func TestImportedEngineWithCustomSteps(t *testing.T) {
 	// Create temporary directory for test files
 	tmpDir := testutil.TempDir(t, "test-*")
@@ -387,20 +387,20 @@ func TestImportedEngineWithCustomSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create shared file with custom engine and steps
+	// Create shared file with codex engine and top-level steps
 	sharedContent := `---
 engine:
-  id: custom
-  steps:
-    - name: Run AI Inference
-      uses: actions/ai-inference@v1
-      with:
-        prompt-file: ${{ env.GH_AW_PROMPT }}
-        model: gpt-4o-mini
+  id: codex
+steps:
+  - name: Run AI Inference
+    uses: actions/ai-inference@v1
+    with:
+      prompt-file: ${{ env.GH_AW_PROMPT }}
+      model: gpt-4o-mini
 ---
 
 <!--
-This shared configuration sets up a custom agentic engine using GitHub's AI inference action.
+This shared configuration sets up a codex agentic engine using GitHub's AI inference action.
 -->
 `
 	sharedFile := filepath.Join(sharedDir, "actions-ai-inference.md")
@@ -410,7 +410,7 @@ This shared configuration sets up a custom agentic engine using GitHub's AI infe
 
 	// Create main workflow that imports the shared engine config
 	mainContent := `---
-name: Test Imported Custom Engine
+name: Test Imported Codex Engine
 on:
   issues:
     types: [opened]
@@ -425,7 +425,7 @@ imports:
 
 # Test Workflow
 
-This workflow imports a custom engine with steps.
+This workflow imports a codex engine with steps.
 `
 	mainFile := filepath.Join(workflowsDir, "test-imported-engine.md")
 	if err := os.WriteFile(mainFile, []byte(mainContent), 0644); err != nil {
@@ -445,7 +445,7 @@ This workflow imports a custom engine with steps.
 		t.Fatal("Expected lock file to be created")
 	}
 
-	// Verify lock file contains the custom step
+	// Verify lock file contains the codex step
 	lockContent, err := os.ReadFile(lockFile)
 	if err != nil {
 		t.Fatal(err)
@@ -469,7 +469,7 @@ This workflow imports a custom engine with steps.
 	}
 }
 
-// TestImportedEngineWithEnvVars tests importing an engine configuration with environment variables
+// TestImportedEngineWithEnvVars tests importing a codex engine configuration with environment variables
 func TestImportedEngineWithEnvVars(t *testing.T) {
 	// Create temporary directory for test files
 	tmpDir := testutil.TempDir(t, "test-*")
@@ -479,21 +479,18 @@ func TestImportedEngineWithEnvVars(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create shared file with custom engine, steps, and env vars
+	// Create shared file with codex engine and env vars
 	sharedContent := `---
 engine:
-  id: custom
+  id: codex
   env:
     CUSTOM_VAR: "test-value"
     ANOTHER_VAR: "another-value"
-  steps:
-    - name: Test Step
-      run: echo "Testing with env vars"
 ---
 
 # Shared Config
 `
-	sharedFile := filepath.Join(sharedDir, "custom-with-env.md")
+	sharedFile := filepath.Join(sharedDir, "codex-with-env.md")
 	if err := os.WriteFile(sharedFile, []byte(sharedContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -503,12 +500,12 @@ engine:
 name: Test Imported Engine With Env
 on: push
 imports:
-  - shared/custom-with-env.md
+  - shared/codex-with-env.md
 ---
 
 # Test Workflow
 
-This workflow imports a custom engine with env vars.
+This workflow imports a codex engine with env vars.
 `
 	mainFile := filepath.Join(workflowsDir, "test-env.md")
 	if err := os.WriteFile(mainFile, []byte(mainContent), 0644); err != nil {
@@ -549,41 +546,30 @@ func TestExtractEngineConfigFromJSON(t *testing.T) {
 	compiler := NewCompiler()
 
 	tests := []struct {
-		name          string
-		engineJSON    string
-		expectedID    string
-		expectedSteps int
-		expectedEnv   map[string]string
-		expectError   bool
+		name        string
+		engineJSON  string
+		expectedID  string
+		expectedEnv map[string]string
+		expectError bool
 	}{
 		{
-			name:          "simple string engine",
-			engineJSON:    `"claude"`,
-			expectedID:    "claude",
-			expectedSteps: 0,
-			expectError:   false,
+			name:        "simple string engine",
+			engineJSON:  `"claude"`,
+			expectedID:  "claude",
+			expectError: false,
 		},
 		{
-			name:          "object with id only",
-			engineJSON:    `{"id": "custom"}`,
-			expectedID:    "custom",
-			expectedSteps: 0,
-			expectError:   false,
+			name:        "object with id only",
+			engineJSON:  `{"id": "codex"}`,
+			expectedID:  "codex",
+			expectError: false,
 		},
 		{
-			name:          "custom engine with steps",
-			engineJSON:    `{"id": "custom", "steps": [{"name": "Test", "run": "echo test"}]}`,
-			expectedID:    "custom",
-			expectedSteps: 1,
-			expectError:   false,
-		},
-		{
-			name:          "custom engine with env vars",
-			engineJSON:    `{"id": "custom", "env": {"VAR1": "value1", "VAR2": "value2"}, "steps": [{"name": "Test", "run": "echo test"}]}`,
-			expectedID:    "custom",
-			expectedSteps: 1,
-			expectedEnv:   map[string]string{"VAR1": "value1", "VAR2": "value2"},
-			expectError:   false,
+			name:        "codex engine with env vars",
+			engineJSON:  `{"id": "codex", "env": {"VAR1": "value1", "VAR2": "value2"}}`,
+			expectedID:  "codex",
+			expectedEnv: map[string]string{"VAR1": "value1", "VAR2": "value2"},
+			expectError: false,
 		},
 		{
 			name:        "invalid JSON",
@@ -626,10 +612,6 @@ func TestExtractEngineConfigFromJSON(t *testing.T) {
 
 			if config.ID != tt.expectedID {
 				t.Errorf("Expected ID %q, got %q", tt.expectedID, config.ID)
-			}
-
-			if len(config.Steps) != tt.expectedSteps {
-				t.Errorf("Expected %d steps, got %d", tt.expectedSteps, len(config.Steps))
 			}
 
 			if tt.expectedEnv != nil {

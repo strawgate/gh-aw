@@ -41,13 +41,8 @@ func TestValidateEngine(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name:      "valid copilot-sdk engine",
-			engine:    "copilot-sdk",
-			expectErr: false,
-		},
-		{
-			name:      "valid custom engine",
-			engine:    "custom",
+			name:      "valid gemini engine",
+			engine:    "gemini",
 			expectErr: false,
 		},
 		{
@@ -92,11 +87,11 @@ func TestValidateEngine(t *testing.T) {
 					return
 				}
 
-				// Check that error message contains the expected format
-				// Error may include "Did you mean" suggestions, so we check if it starts with the base message
-				expectedMsg := fmt.Sprintf("invalid engine value '%s'. Must be 'claude', 'codex', 'copilot', 'copilot-sdk', or 'custom'", tt.engine)
-				if tt.errMessage != "" && !strings.HasPrefix(err.Error(), expectedMsg) {
-					t.Errorf("validateEngine(%q) error message = %v, want to start with %v", tt.engine, err.Error(), expectedMsg)
+				// Check that error message contains the expected format.
+				// The engine list is dynamic, so only check the prefix.
+				expectedPrefix := fmt.Sprintf("invalid engine value '%s'. Must be", tt.engine)
+				if tt.errMessage != "" && !strings.HasPrefix(err.Error(), expectedPrefix) {
+					t.Errorf("validateEngine(%q) error message = %v, want to start with %v", tt.engine, err.Error(), expectedPrefix)
 				}
 			} else {
 				if err != nil {

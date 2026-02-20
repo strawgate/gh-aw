@@ -29,7 +29,7 @@ func TestBotsFieldExtraction(t *testing.T) {
 on:
   issues:
     types: [opened]
-bots: ["dependabot[bot]", "renovate[bot]"]
+  bots: ["dependabot[bot]", "renovate[bot]"]
 ---
 
 # Test Workflow
@@ -43,7 +43,7 @@ Test workflow content.`,
 on:
   pull_request:
     types: [opened]
-bots: ["github-actions[bot]"]
+  bots: ["github-actions[bot]"]
 ---
 
 # Test Workflow
@@ -109,8 +109,8 @@ func TestBotsEnvironmentVariableGeneration(t *testing.T) {
 on:
   issues:
     types: [opened]
-roles: [triage]
-bots: ["dependabot[bot]", "renovate[bot]"]
+  roles: [triage]
+  bots: ["dependabot[bot]", "renovate[bot]"]
 ---
 
 # Test Workflow with Bots
@@ -158,7 +158,7 @@ func TestBotsWithDefaultRoles(t *testing.T) {
 on:
   pull_request:
     types: [opened]
-bots: ["dependabot[bot]"]
+  bots: ["dependabot[bot]"]
 ---
 
 # Test Workflow
@@ -206,8 +206,8 @@ func TestBotsWithRolesAll(t *testing.T) {
 on:
   issues:
     types: [opened]
-roles: all
-bots: ["dependabot[bot]"]
+  roles: all
+  bots: ["dependabot[bot]"]
 ---
 
 # Test Workflow

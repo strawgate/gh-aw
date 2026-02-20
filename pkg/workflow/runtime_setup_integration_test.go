@@ -146,14 +146,14 @@ mcp-servers:
 			},
 		},
 		{
-			name: "no auto-detection for workflows without runtime commands in custom steps",
+			name: "no auto-detection for workflows without runtime commands in steps",
 			workflowMarkdown: `---
 on: push
 engine:
-  id: custom
-  steps:
-    - name: Echo
-      run: echo "Hello"
+  id: claude
+steps:
+  - name: Echo
+    run: echo "Hello"
 ---
 
 # Test workflow`,
@@ -248,7 +248,7 @@ steps:
 	}
 
 	// It's acceptable to have Node.js setup appear twice:
-	// - Once from auto-detection for custom steps
+	// - Once from auto-detection for engine steps
 	// - Once from engine requirements
 	// This is not a problem as GitHub Actions will use the first setup
 }

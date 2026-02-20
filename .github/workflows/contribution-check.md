@@ -16,114 +16,6 @@ tools:
   github:
     toolsets: [default]
     lockdown: false
-
-steps:
-  - name: Fetch and filter PRs
-    uses: actions/github-script@v8
-    with:
-      script: |
-        const fs = require('fs');
-        const [targetOwner, targetRepo] = process.env.TARGET_REPOSITORY.split('/');
-
-        const TARGET = 10;
-        const MAX_PAGES = 3;
-        const PER_PAGE = 20;
-
-        const SKIP_LABELS = new Set(['maintainer', 'trusted-contributor']);
-        const SMALL_LABELS = new Set(['size: XS', 'size: S']);
-
-        const skipReason = (pr) => {
-          if (pr.author_association === 'MEMBER' || pr.author_association === 'OWNER') return 'maintainer';
-          const labels = pr.labels.map(l => l.name);
-          if (labels.some(l => SKIP_LABELS.has(l))) return 'maintainer';
-          if (labels.some(l => SMALL_LABELS.has(l))) return 'small';
-          if (labels.some(l => l.startsWith('close:') || l.startsWith('r: '))) return 'triaged';
-          return null;
-        };
-
-        const accepted = [];
-        const allPRs = [];
-
-        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-        for (let page = 1; page <= MAX_PAGES && accepted.length < TARGET; page++) {
-          if (page > 1) await sleep(1000);
-          core.startGroup(`Page ${page}/${MAX_PAGES} (accepted ${accepted.length}/${TARGET} so far)`);
-
-          const batch = await github.rest.pulls.list({
-            owner: targetOwner,
-            repo: targetRepo,
-            state: 'open',
-            sort: 'created',
-            direction: 'desc',
-            per_page: PER_PAGE,
-            page,
-          });
-
-          const prs = batch.data;
-          core.info(`Fetched ${prs.length} PRs`);
-
-          if (prs.length === 0) {
-            core.info('No more PRs to fetch');
-            core.endGroup();
-            break;
-          }
-
-          for (const pr of prs) {
-            const labels = pr.labels.map(l => l.name).join(', ');
-            core.info(`  #${pr.number} association=${pr.author_association} labels=[${labels}]`);
-          }
-
-          allPRs.push(...prs);
-
-          for (const pr of prs) {
-            if (accepted.length >= TARGET) break;
-            if (!skipReason(pr)) accepted.push(pr.number);
-          }
-
-          core.info(`Accepted: ${accepted.length}/${TARGET} | Skipped so far: ${allPRs.length - accepted.length}`);
-          core.endGroup();
-        }
-
-        const prList = accepted.slice(0, TARGET);
-        const skipped = allPRs.length - accepted.length;
-
-        core.startGroup('Final results');
-        core.info(`Fetched: ${allPRs.length} | Evaluated: ${accepted.length} | Skipped: ${skipped}`);
-        core.info(`PR list: ${prList.join(',')}`);
-        core.endGroup();
-
-        // Step summary
-        const rows = allPRs.map(pr => {
-          const num = pr.number;
-          const assoc = pr.author_association;
-          const labels = pr.labels.map(l => l.name).join(', ');
-          const reason = skipReason(pr) ?? 'evaluate';
-          const icon = reason === 'evaluate' ? '✅' : '⏭️';
-          return `| #${num} | \`${assoc}\` | ${labels} | ${icon} ${reason} |`;
-        });
-
-        const summary = [
-          '### 🔍 PR Pre-filter Results',
-          '',
-          `**Fetched:** ${allPRs.length} | **Evaluated:** ${accepted.length} | **Skipped:** ${skipped}`,
-          '',
-          '| PR | Association | Labels | Status |',
-          '|---|---|---|---|',
-          ...rows,
-        ].join('\n');
-
-        await core.summary.addRaw(summary).write();
-
-        // Write results to a file the agent can read
-        const result = {
-          pr_numbers: prList,
-          skipped_count: skipped,
-          evaluated_count: accepted.length,
-        };
-        fs.writeFileSync('pr-filter-results.json', JSON.stringify(result, null, 2));
-        core.info(`Wrote pr-filter-results.json: ${JSON.stringify(result)}`);
-
 safe-outputs:
   create-issue:
     title-prefix: "[Contribution Check Report]"
@@ -134,11 +26,11 @@ safe-outputs:
     allowed: [spam, needs-work, outdated, lgtm]
     max: 4
     target: "*"
-    target-repo: ${{ vars.TARGET_REPOSITORY || 'openclaw/openclaw' }}
+    target-repo: ${{ vars.TARGET_REPOSITORY }}
   add-comment:
     max: 10
     target: "*"
-    target-repo: ${{ vars.TARGET_REPOSITORY || 'openclaw/openclaw' }}
+    target-repo: ${{ vars.TARGET_REPOSITORY }}
     hide-older-comments: true
 ---
 

@@ -153,7 +153,7 @@ The factory organized shared components into two main directories:
 
 **[`gh-aw.md`](https://github.com/github/gh-aw/tree/2c1f68a721ae7b3b67d0c2d93decf1fa5bcf7ee3/.github/workflows/shared/mcp/gh-aw.md?plain=1)** (12 imports)
 
-- GitHub Agentic Workflows MCP server
+- GH-AW as an MCP server
 - `logs` command for workflow debugging
 - Workflow metadata access
 

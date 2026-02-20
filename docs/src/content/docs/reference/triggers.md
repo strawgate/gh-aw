@@ -408,10 +408,6 @@ lines of code where improvements can be made.
 
 The command must appear as the **first word** in the comment or body text. Command workflows automatically add the "eyes" (👀) reaction and edit comments with workflow run links.
 
-> [!NOTE]
-> Deprecated Syntax
-> The `command:` trigger field is deprecated. Use `slash_command:` instead.
-
 ### Label Filtering (`names:`)
 
 Filter issue and pull request triggers by label names using the `names:` field:

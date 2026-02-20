@@ -24,7 +24,7 @@ network:
 safe-outputs:
   create-issue:
     title-prefix: "[Code Quality] "
-    labels: [code-quality, automation, task-mining, cookie]
+    labels: [code-quality, automation, task-mining]
     max: 5
     group: true
     expires: 1d
@@ -52,7 +52,6 @@ tools:
     - "date *"
 
 imports:
-  - shared/mood.md
   - shared/jqschema.md
   - shared/reporting.md
 

@@ -73,7 +73,6 @@ func TestOtherEnginesNoDefaultDetectionModel(t *testing.T) {
 	engines := []CodingAgentEngine{
 		NewClaudeEngine(),
 		NewCodexEngine(),
-		NewCustomEngine(),
 	}
 
 	for _, engine := range engines {
@@ -89,7 +88,6 @@ func TestOtherEnginesNoPluginSupport(t *testing.T) {
 	engines := []CodingAgentEngine{
 		NewClaudeEngine(),
 		NewCodexEngine(),
-		NewCustomEngine(),
 	}
 
 	for _, engine := range engines {
@@ -724,7 +722,7 @@ func TestCopilotEngineRenderGitHubMCPConfig(t *testing.T) {
 			expectedStrs: []string{
 				`"github": {`,
 				`"type": "stdio",`,
-				`"container": "ghcr.io/github/github-mcp-server:v0.30.3"`,
+				`"container": "ghcr.io/github/github-mcp-server:` + string(constants.DefaultGitHubMCPServerVersion) + `"`,
 				`"env": {`,
 				`"GITHUB_PERSONAL_ACCESS_TOKEN": "\${GITHUB_MCP_SERVER_TOKEN}"`,
 				`},`,
@@ -754,7 +752,7 @@ func TestCopilotEngineRenderGitHubMCPConfig(t *testing.T) {
 			expectedStrs: []string{
 				`"github": {`,
 				`"type": "stdio",`,
-				`"container": "ghcr.io/github/github-mcp-server:v0.30.3"`,
+				`"container": "ghcr.io/github/github-mcp-server:` + string(constants.DefaultGitHubMCPServerVersion) + `"`,
 				`"env": {`,
 				`}`,
 			},

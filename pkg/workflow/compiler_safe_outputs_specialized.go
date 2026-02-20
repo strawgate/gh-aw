@@ -68,6 +68,11 @@ func (c *Compiler) buildAssignToAgentStepConfig(data *WorkflowData, mainJobName 
 		customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_AGENT_PULL_REQUEST_REPO: %q\n", cfg.PullRequestRepoSlug))
 	}
 
+	// Add base branch environment variable for PR creation in target repo
+	if cfg.BaseBranch != "" {
+		customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_AGENT_BASE_BRANCH: %q\n", cfg.BaseBranch))
+	}
+
 	// Add allowed PR repos list environment variable (comma-separated)
 	if len(cfg.AllowedPullRequestRepos) > 0 {
 		allowedPullRequestReposStr := ""
@@ -89,7 +94,7 @@ func (c *Compiler) buildAssignToAgentStepConfig(data *WorkflowData, mainJobName 
 	condition := BuildSafeOutputType("assign_to_agent")
 
 	return SafeOutputStepConfig{
-		StepName:                   "Assign To Agent",
+		StepName:                   "Assign to agent",
 		StepID:                     "assign_to_agent",
 		ScriptName:                 "assign_to_agent",
 		Script:                     getAssignToAgentScript(),

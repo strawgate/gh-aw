@@ -114,8 +114,7 @@ GitHub Actions implements a comprehensive security model designed to protect you
 
 ### Workflow Storage and Execution
 
-> [!CAUTION]
-> Workflows **must** be stored in the `.github/workflows/` directory on the **default branch** (typically `main`) or other protected branches to be active and trusted.
+Workflows **must** be stored in the `.github/workflows/` directory on the **default branch** (typically `main`) or other protected branches to be active and trusted.
 
 **Why workflows require main branch storage:**
 

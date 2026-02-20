@@ -759,33 +759,3 @@ func TestExtractLogMetricsWithAwOutputFile(t *testing.T) {
 	// Note: estimated cost and turns are engine/log-format specific
 	// For this test, we're just verifying basic token parsing works
 }
-
-func TestCustomEngineParseLogMetrics(t *testing.T) {
-	// Create a temporary log file with custom engine format
-	tmpDir := testutil.TempDir(t, "test-*")
-	logFile := filepath.Join(tmpDir, "test-custom.log")
-
-	logContent := `2024-01-15T10:30:00Z Starting custom engine execution
-Custom engine processing...
-Tokens used: 3456
-Estimated cost: $0.067
-2024-01-15T10:31:30Z Workflow completed`
-
-	err := os.WriteFile(logFile, []byte(logContent), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test log file: %v", err)
-	}
-
-	// Test with custom engine
-	customEngine := workflow.NewCustomEngine()
-	metrics, err := parseLogFileWithEngine(logFile, customEngine, false, false)
-	if err != nil {
-		t.Fatalf("parseLogFileWithEngine failed: %v", err)
-	}
-
-	// Custom engine should extract basic token info
-	// Note: The actual behavior depends on the custom engine implementation
-	if metrics.TokenUsage < 0 {
-		t.Errorf("Expected non-negative token usage, got %d", metrics.TokenUsage)
-	}
-}

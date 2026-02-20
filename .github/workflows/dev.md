@@ -7,7 +7,7 @@ name: Dev
 description: Daily status report for gh-aw project
 timeout-minutes: 30
 strict: false
-engine: copilot-sdk
+engine: copilot
 
 permissions:
   contents: read
@@ -18,8 +18,6 @@ safe-outputs:
   create-issue:
     expires: 7d
     title-prefix: "[Daily Report] "
-imports:
-  - shared/mood.md
 ---
 
 # Daily Status Report

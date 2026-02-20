@@ -9,6 +9,7 @@ const { processItems } = require("./safe_output_processor.cjs");
 const { getErrorMessage } = require("./error_helpers.cjs");
 const { resolveTargetRepoConfig, resolveAndValidateRepo } = require("./repo_helpers.cjs");
 const { resolveIssueNumber, extractAssignees } = require("./safe_output_helpers.cjs");
+const { logStagedPreviewInfo } = require("./staged_preview.cjs");
 
 /** @type {string} Safe output type handled by this module */
 const HANDLER_TYPE = "unassign_from_user";
@@ -21,6 +22,7 @@ const HANDLER_TYPE = "unassign_from_user";
 async function main(config = {}) {
   // Extract configuration
   const allowedAssignees = config.allowed || [];
+  const blockedAssignees = config.blocked || [];
   const maxCount = config.max || 10;
 
   // Resolve target repository configuration
@@ -32,6 +34,9 @@ async function main(config = {}) {
   core.info(`Unassign from user configuration: max=${maxCount}`);
   if (allowedAssignees.length > 0) {
     core.info(`Allowed assignees to unassign: ${allowedAssignees.join(", ")}`);
+  }
+  if (blockedAssignees.length > 0) {
+    core.info(`Blocked assignees to unassign: ${blockedAssignees.join(", ")}`);
   }
   core.info(`Default target repository: ${defaultTargetRepo}`);
   if (allowedRepos.size > 0) {
@@ -78,7 +83,7 @@ async function main(config = {}) {
     core.info(`Requested assignees to unassign: ${JSON.stringify(requestedAssignees)}`);
 
     // Use shared helper to filter, sanitize, dedupe, and limit
-    const uniqueAssignees = processItems(requestedAssignees, allowedAssignees, maxCount);
+    const uniqueAssignees = processItems(requestedAssignees, allowedAssignees, maxCount, blockedAssignees);
 
     if (uniqueAssignees.length === 0) {
       core.info("No assignees to remove");
@@ -108,7 +113,7 @@ async function main(config = {}) {
 
     // If in staged mode, preview without executing
     if (isStaged) {
-      core.info(`Staged mode: Would unassign users from issue #${issueNumber} in ${targetRepo}`);
+      logStagedPreviewInfo(`Would unassign users from issue #${issueNumber} in ${targetRepo}`);
       return {
         success: true,
         staged: true,

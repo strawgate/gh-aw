@@ -130,8 +130,7 @@ func (e *CodexEngine) GetExecutionSteps(workflowData *WorkflowData, logFile stri
 	codexEngineLog.Printf("Building Codex execution steps: workflow=%s, model=%s, has_agent_file=%v, firewall=%v",
 		workflowData.Name, model, workflowData.AgentFile != "", firewallEnabled)
 
-	// Handle custom steps if they exist in engine config
-	steps := InjectCustomEngineSteps(workflowData, e.convertStepToYAML)
+	var steps []GitHubActionStep
 
 	// Build model parameter only if specified in engineConfig
 	// Otherwise, model can be set via GH_AW_MODEL_AGENT_CODEX or GH_AW_MODEL_DETECTION_CODEX environment variable
@@ -315,7 +314,7 @@ mkdir -p "$CODEX_HOME/logs"
 	}
 
 	// Generate the step for Codex execution
-	stepName := "Run Codex"
+	stepName := "Execute Codex"
 	var stepLines []string
 
 	stepLines = append(stepLines, fmt.Sprintf("      - name: %s", stepName))
@@ -413,7 +412,7 @@ func (e *CodexEngine) expandNeutralToolsToCodexTools(toolsConfig *ToolsConfig) *
 
 		// Also update the Custom map entry for playwright with allowed tools list
 		playwrightMCP := map[string]any{
-			"allowed": GetCopilotAgentPlaywrightTools(),
+			"allowed": GetPlaywrightTools(),
 		}
 		if playwrightConfig.Version != "" {
 			playwrightMCP["version"] = playwrightConfig.Version

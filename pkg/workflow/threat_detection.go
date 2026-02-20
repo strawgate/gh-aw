@@ -218,7 +218,7 @@ func (c *Compiler) buildDownloadArtifactStep(mainJobName string) []string {
 // buildEchoAgentOutputsStep creates a step that echoes the agent outputs
 func (c *Compiler) buildEchoAgentOutputsStep(mainJobName string) []string {
 	return []string{
-		"      - name: Echo agent output types\n",
+		"      - name: Print agent output types\n",
 		"        env:\n",
 		fmt.Sprintf("          AGENT_OUTPUT_TYPES: ${{ needs.%s.outputs.output_types }}\n", mainJobName),
 		"        run: |\n",
@@ -353,7 +353,6 @@ func (c *Compiler) buildEngineSteps(data *WorkflowData) []string {
 				Concurrency: detectionEngineConfig.Concurrency,
 				UserAgent:   detectionEngineConfig.UserAgent,
 				Env:         detectionEngineConfig.Env,
-				Steps:       detectionEngineConfig.Steps,
 				Config:      detectionEngineConfig.Config,
 				Args:        detectionEngineConfig.Args,
 				Firewall:    detectionEngineConfig.Firewall,

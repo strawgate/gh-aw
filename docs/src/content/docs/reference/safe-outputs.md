@@ -7,11 +7,10 @@ sidebar:
 
 The [`safe-outputs:`](/gh-aw/reference/glossary/#safe-outputs) (validated GitHub operations) element of your workflow's [frontmatter](/gh-aw/reference/glossary/#frontmatter) declares that your agentic workflow should conclude with optional automated actions based on the agentic workflow's output. This enables your workflow to write content that is then automatically processed to create GitHub issues, comments, pull requests, or add labels - all without giving the agentic portion of the workflow any write permissions.
 
-## Why Safe Outputs?
-
 Safe outputs enforce security through separation: agents run read-only and request actions via structured output, while separate permission-controlled jobs execute those requests. This provides least privilege, defense against prompt injection, auditability, and controlled limits per operation.
 
 Example:
+
 ```yaml wrap
 safe-outputs:
   create-issue:
@@ -20,9 +19,6 @@ safe-outputs:
 The agent requests issue creation; a separate job with `issues: write` creates it.
 
 ## Available Safe Output Types
-
-> [!NOTE]
-> Most safe output types support cross-repository operations. Exceptions are noted below.
 
 ### Issues & Discussions
 
@@ -77,15 +73,9 @@ The agent requests issue creation; a separate job with `issues: write` creates i
 - [**Missing Tool**](#missing-tool-reporting-missing-tool) (`missing-tool`) - Report missing tools (max: unlimited, same-repo only)
 - [**Missing Data**](#missing-data-reporting-missing-data) (`missing-data`) - Report missing data required to achieve goals (max: unlimited, same-repo only)
 
-> [!TIP]
-> Custom safe output types: [Custom Safe Output Jobs](/gh-aw/reference/custom-safe-outputs/). See [Deterministic & Agentic Patterns](/gh-aw/guides/deterministic-agentic-patterns/) for combining computation and AI reasoning.
-
 ### Custom Safe Output Jobs (`jobs:`)
 
 Create custom post-processing jobs registered as Model Context Protocol (MCP) tools. Support standard GitHub Actions properties and auto-access agent output via `$GH_AW_AGENT_OUTPUT`. See [Custom Safe Output Jobs](/gh-aw/reference/custom-safe-outputs/).
-
-> [!NOTE]
-> **Internal Implementation**: Custom safe output jobs are internally referred to as "safe-jobs" in the compiler code (`pkg/workflow/safe_jobs.go`), but they are user-facing only through the `safe-outputs.jobs:` configuration. The top-level `safe-jobs:` key is deprecated and not supported.
 
 ### Issue Creation (`create-issue:`)
 
@@ -102,6 +92,7 @@ safe-outputs:
     group: true                      # group as sub-issues under parent
     close-older-issues: true         # close previous issues from same workflow
     target-repo: "owner/repo"        # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 > [!TIP]
@@ -132,6 +123,7 @@ The `group` field (default: `false`) automatically organizes multiple issues as 
 This is useful for workflows that create multiple related issues, such as planning workflows that break down epics into tasks, or batch processing workflows that create issues for individual items.
 
 **Example:**
+
 ```yaml wrap
 safe-outputs:
   create-issue:
@@ -160,6 +152,7 @@ safe-outputs:
 ```
 
 When enabled:
+
 - Searches for open issues containing the same workflow-id marker in their body
 - Closes found issues as "not planned" with a comment linking to the new issue
 - Maximum 10 older issues will be closed
@@ -178,21 +171,25 @@ You can use this marker to find all items created by a specific workflow on GitH
 **Search Examples:**
 
 Find all open issues created by the `daily-team-status` workflow:
+
 ```
 repo:owner/repo is:issue is:open "gh-aw-workflow-id: daily-team-status" in:body
 ```
 
 Find all pull requests created by the `security-audit` workflow:
+
 ```
 repo:owner/repo is:pr "gh-aw-workflow-id: security-audit" in:body
 ```
 
 Find all items (issues, PRs, discussions) from any workflow in your organization:
+
 ```
 org:your-org "gh-aw-workflow-id:" in:body
 ```
 
 Find comments from a specific workflow:
+
 ```
 repo:owner/repo "gh-aw-workflow-id: bot-responder" in:comments
 ```
@@ -270,25 +267,47 @@ safe-outputs:
 
 ### Add Labels (`add-labels:`)
 
-Adds labels to issues or PRs. Specify `allowed` to restrict to specific labels.
+Adds labels to issues or PRs. Specify `allowed` to restrict to specific labels, or `blocked` to deny specific label patterns regardless of the allow list.
 
 ```yaml wrap
 safe-outputs:
   add-labels:
     allowed: [bug, enhancement]  # restrict to specific labels
+    blocked: ["~*", "*[bot]"]   # deny labels matching these glob patterns
     max: 3                       # max labels (default: 3)
     target: "*"                  # "triggering" (default), "*", or number
     target-repo: "owner/repo"    # cross-repository
 ```
 
+#### Blocked Label Patterns
+
+The `blocked` field accepts glob patterns that are evaluated before the `allowed` list. Any label matching a blocked pattern is rejected, even if it also appears in the allowed list. This provides infrastructure-level protection against prompt injection attacks in repositories with many labels where maintaining an exhaustive allowlist is impractical.
+
+Common patterns:
+
+| Pattern | Effect |
+|---------|--------|
+| `~*` | Denies all labels starting with `~` (often used as workflow triggers) |
+| `*[bot]` | Denies all labels ending with `[bot]` (administrative bot labels) |
+| `stale` | Denies the exact `stale` label |
+
+```yaml wrap
+safe-outputs:
+  add-labels:
+    blocked: ["~*", "*[bot]"]    # Blocked patterns evaluated first
+    allowed: [bug, enhancement]  # Allowed list applied after blocked check
+    max: 5
+```
+
 ### Remove Labels (`remove-labels:`)
 
-Removes labels from issues or PRs. Specify `allowed` to restrict which labels can be removed. If a label is not present on the item, it will be silently skipped.
+Removes labels from issues or PRs. Specify `allowed` to restrict which labels can be removed, or `blocked` to prevent removal of specific label patterns. If a label is not present on the item, it will be silently skipped.
 
 ```yaml wrap
 safe-outputs:
   remove-labels:
     allowed: [automated, stale]  # restrict to specific labels (optional)
+    blocked: ["~*"]              # deny removal of labels matching these glob patterns
     max: 3                       # max operations (default: 3)
     target: "*"                  # "triggering" (default), "*", or number
     target-repo: "owner/repo"    # cross-repository
@@ -296,7 +315,7 @@ safe-outputs:
 
 **Target**: `"triggering"` (requires issue/PR event), `"*"` (any issue/PR), or number (specific issue/PR).
 
-When `allowed` is omitted or set to `null`, any labels can be removed. Use `allowed` to restrict removal to specific labels only, providing control over which labels agents can manipulate.
+When `allowed` is omitted or set to `null`, any labels can be removed. Use `allowed` to restrict removal to specific labels only, providing control over which labels agents can manipulate. The `blocked` field takes precedence over `allowed`.
 
 **Example use case**: Label lifecycle management where agents add temporary labels during triage and remove them once processed.
 
@@ -319,11 +338,12 @@ safe-outputs:
     max: 3                       # max reviewers (default: 3)
     target: "*"                  # "triggering" (default), "*", or number
     target-repo: "owner/repo"    # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 **Target**: `"triggering"` (requires PR event), `"*"` (any PR), or number (specific PR).
 
-Use `reviewers: copilot` to assign the Copilot PR reviewer bot. Requires a PAT stored as `COPILOT_GITHUB_TOKEN` or `GH_AW_GITHUB_TOKEN` (legacy).
+Use `reviewers: [copilot]` to assign the Copilot PR reviewer bot. This uses the same token resolution as Copilot agent assignment: `github-token:`, [`GH_AW_AGENT_TOKEN`](/gh-aw/reference/auth/#gh_aw_agent_token) (or [`GH_AW_GITHUB_TOKEN`](/gh-aw/reference/auth/#gh_aw_github_token), falling back to `GITHUB_TOKEN`).
 
 ### Assign Milestone (`assign-milestone:`)
 
@@ -335,6 +355,7 @@ safe-outputs:
     allowed: [v1.0, v2.0]    # restrict to specific milestone titles
     max: 1                   # max assignments (default: 1)
     target-repo: "owner/repo" # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 ### Issue Updates (`update-issue:`)
@@ -350,6 +371,7 @@ safe-outputs:
     max: 3                    # max updates (default: 1)
     target: "*"               # "triggering" (default), "*", or number
     target-repo: "owner/repo" # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 **Target**: `"triggering"` (requires issue event), `"*"` (any issue), or number (specific issue).
@@ -357,6 +379,7 @@ safe-outputs:
 When using `target: "*"`, the agent must provide `issue_number` or `item_number` in the output to identify which issue to update.
 
 **Operation Types** (for body updates):
+
 - `append` (default): Adds content to the end with separator and attribution
 - `prepend`: Adds content to the start with separator and attribution
 - `replace`: Completely replaces existing body with new content and attribution
@@ -376,6 +399,7 @@ safe-outputs:
     max: 1                    # max updates (default: 1)
     target: "*"               # "triggering" (default), "*", or number
     target-repo: "owner/repo" # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 **Target**: `"triggering"` (requires PR event), `"*"` (any PR), or number (specific PR).
@@ -383,6 +407,7 @@ safe-outputs:
 When using `target: "*"`, the agent must provide `pull_request_number` in the output to identify which pull request to update.
 
 **Operation Types**:
+
 - `append` (default): Adds content to the end with separator and attribution
 - `prepend`: Adds content to the start with separator and attribution
 - `replace`: Completely replaces existing body with new content and attribution
@@ -402,6 +427,7 @@ safe-outputs:
     sub-title-prefix: "[Task]"            # sub must match prefix
     max: 1                                # max links (default: 1)
     target-repo: "owner/repo"             # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 Agent output includes `parent_issue_number` and `sub_issue_number`. Validation ensures both issues exist and meet label/prefix requirements before linking.
@@ -430,6 +456,7 @@ When `views` are configured, they are created automatically after project creati
 The `target-owner` field is an optional default. When configured, the agent can omit the owner field in tool calls, and the default will be used. The agent can still override by providing an explicit owner value.
 
 **Without default** (agent must provide owner):
+
 ```javascript
 create_project({
   title: "Project: Security Q1 2025",
@@ -440,6 +467,7 @@ create_project({
 ```
 
 **With default configured** (agent only needs title):
+
 ```javascript
 create_project({
   title: "Project: Security Q1 2025"
@@ -453,6 +481,7 @@ Optionally include `item_url` (GitHub issue URL) to add the issue as the first p
 
 > [!IMPORTANT]
 > **Token Requirements**: The default `GITHUB_TOKEN` **cannot** create projects. You **must** configure a PAT with Projects permissions:
+>
 > - **Classic PAT**: `project` scope (user projects) or `project` + `repo` scope (org projects)
 > - **Fine-grained PAT**: Organization permissions → Projects: Read & Write
 
@@ -480,6 +509,7 @@ safe-outputs:
 ```
 
 **Configuration options:**
+
 - `project` (required in configuration): Default project URL shown in examples. Note: Agent output messages **must** explicitly include the `project` field - the configured value is for documentation purposes only.
 - `max`: Maximum number of operations per run (default: 10).
 - `github-token`: Custom token with Projects permissions (required for Projects v2 access).
@@ -497,6 +527,7 @@ GitHub Projects V2 supports various custom field types. The following field type
 - **`SINGLE_SELECT`** - Dropdown/select fields (creates missing options automatically)
 
 **Example field usage:**
+
 ```yaml
 fields:
   status: "In Progress"          # SINGLE_SELECT field
@@ -514,6 +545,7 @@ fields:
 Project views can be created automatically by declaring them in the `views` array. Views are created when the workflow runs, after processing update_project items from the agent.
 
 **View configuration:**
+
 ```yaml
 safe-outputs:
   update-project:
@@ -539,11 +571,13 @@ safe-outputs:
 | `visible-fields` | array | No | Field IDs to display (table/board only, not roadmap) |
 
 **Layout types:**
+
 - **`table`** - List view with customizable columns for detailed tracking
 - **`board`** - Kanban-style cards grouped by status or custom field
 - **`roadmap`** - Timeline visualization with date-based swimlanes
 
 **Filter syntax examples:**
+
 - `is:issue is:open` - Open issues only
 - `is:pr` - Pull requests only  
 - `is:issue is:pr` - Both issues and PRs
@@ -551,8 +585,6 @@ safe-outputs:
 - `assignee:@me` - Items assigned to viewer
 
 Views are created automatically during workflow execution. The workflow must include at least one `update_project` operation to provide the target project URL.
-
-
 
 ### Project Status Updates (`create-project-status-update:`)
 
@@ -567,6 +599,7 @@ safe-outputs:
 ```
 
 **Configuration options:**
+
 - `project` (required in configuration): Default project URL shown in examples. Note: Agent output messages **must** explicitly include the `project` field - the configured value is for documentation purposes only.
 - `max`: Maximum number of status updates per run (default: 1).
 - `github-token`: Custom token with Projects permissions (required for Projects v2 access).
@@ -628,7 +661,6 @@ create-project-status-update:
 
 Exposes outputs: `status-update-id`, `project-id`, `status`.
 
-
 ### Pull Request Creation (`create-pull-request:`)
 
 Creates PRs with code changes. By default, falls back to creating an issue if PR creation fails (e.g., org settings block it). Set `fallback-as-issue: false` to disable this fallback and avoid requiring `issues: write` permission. `expires` field (same-repo only) auto-closes after period: integers (days) or `2h`, `7d`, `2w`, `1m`, `1y` (hours < 24 treated as 1 day).
@@ -645,6 +677,7 @@ safe-outputs:
     target-repo: "owner/repo"     # cross-repository
     base-branch: "vnext"          # target branch for PR (default: github.ref_name)
     fallback-as-issue: false      # disable issue fallback (default: true)
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 The `base-branch` field specifies which branch the pull request should target. This is particularly useful for cross-repository PRs where you need to target non-default branches (e.g., `vnext`, `release/v1.0`, `staging`). When not specified, defaults to the workflow's branch (`github.ref_name`).
@@ -657,10 +690,13 @@ safe-outputs:
     target-repo: "org/docs"
     base-branch: "vnext"
     draft: true
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 > [!NOTE]
 > PR creation may fail if "Allow GitHub Actions to create and approve pull requests" is disabled in Organization Settings. By default (`fallback-as-issue: true`), fallback creates an issue with branch link and requires `issues: write` permission. Set `fallback-as-issue: false` to disable fallback and only require `contents: write` + `pull-requests: write`.
+
+When `create-pull-request` is configured, git commands (`checkout`, `branch`, `switch`, `add`, `rm`, `commit`, `merge`) are automatically enabled.
 
 ### Close Pull Request (`close-pull-request:`)
 
@@ -674,6 +710,7 @@ safe-outputs:
     required-title-prefix: "[bot]"    # only close matching prefix
     max: 10                           # max closures (default: 1)
     target-repo: "owner/repo"         # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 ### PR Review Comments (`create-pull-request-review-comment:`)
@@ -688,6 +725,7 @@ safe-outputs:
     target: "*"               # "triggering" (default), "*", or number
     target-repo: "owner/repo" # cross-repository
     footer: "if-body"         # footer control: "always", "none", or "if-body"
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 ### Reply to PR Review Comment (`reply-to-pull-request-review-comment:`)
@@ -702,29 +740,14 @@ safe-outputs:
     target-repo: "owner/repo"            # cross-repository
     allowed-repos: ["org/other-repo"]    # additional allowed repositories
     footer: true                         # add AI-generated footer (default: true)
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
-
-
-#### Footer Control for Review Comments
 
 The `footer` field controls whether AI-generated footers are added to PR review comments:
 
 - `"always"` (default) - Always include footer on review comments
 - `"none"` - Never include footer on review comments
 - `"if-body"` - Only include footer when the review has a body text
-
-You can also use boolean values which are automatically converted:
-- `true` → `"always"`
-- `false` → `"none"`
-
-This is particularly useful for clean approval reviews without body text, where you want to avoid footer noise:
-
-```yaml wrap
-safe-outputs:
-  create-pull-request-review-comment:
-    footer: "if-body"  # Only show footer when review has body text
-  submit-pull-request-review:
-```
 
 With `footer: "if-body"`, approval reviews without body text appear clean without the AI-generated footer, while reviews with explanatory text still include the footer for attribution.
 
@@ -736,12 +759,15 @@ If the agent calls `submit_pull_request_review`, it can specify a review `body` 
 
 If the agent does not call `submit_pull_request_review` at all, buffered comments are still submitted as a COMMENT review automatically.
 
+When the workflow is not triggered by a pull request (e.g. `workflow_dispatch`), set `target` to the PR number (e.g. `${{ github.event.inputs.pr_number }}`) so the review can be submitted. Same semantics as [add-comment](#comment-creation-add-comment) `target`: `"triggering"` (default), `"*"` (use `pull_request_number` from the message), or an explicit number.
+
 ```yaml wrap
 safe-outputs:
   create-pull-request-review-comment:
     max: 10
   submit-pull-request-review:
     max: 1            # max reviews to submit (default: 1)
+    target: "triggering"  # or "*", or e.g. ${{ github.event.inputs.pr_number }} when not in pull_request trigger
     footer: false     # omit AI-generated footer from review body (default: true)
 ```
 
@@ -771,6 +797,7 @@ Creates security advisories in SARIF format and submits to GitHub Code Scanning.
 safe-outputs:
   create-code-scanning-alert:
     max: 50  # max findings (default: unlimited)
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 ### Autofix Code Scanning Alerts (`autofix-code-scanning-alert:`)
@@ -781,6 +808,7 @@ Creates automated fixes for code scanning alerts. Agent outputs fix suggestions 
 safe-outputs:
   autofix-code-scanning-alert:
     max: 10  # max autofixes (default: 10)
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 ### Push to PR Branch (`push-to-pull-request-branch:`)
@@ -794,11 +822,10 @@ safe-outputs:
     title-prefix: "[bot] "      # require title prefix
     labels: [automated]         # require all labels
     if-no-changes: "warn"       # "warn" (default), "error", or "ignore"
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
-:::note
-File editing tools (Edit, Write, NotebookEdit) and git commands are automatically added when `create-pull-request` or `push-to-pull-request-branch` are configured - no explicit `bash` configuration needed.
-:::
+When `push-to-pull-request-branch` is configured, git commands (`checkout`, `branch`, `switch`, `add`, `rm`, `commit`, `merge`) are automatically enabled.
 
 ### Release Updates (`update-release:`)
 
@@ -825,9 +852,11 @@ safe-outputs:
     max-size: 5120                   # KB (default: 10240 = 10MB)
     allowed-exts: [.png, .jpg, .svg] # default: [.png, .jpg, .jpeg]
     max: 20                          # default: 10
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 **Branch Requirements**: New branches require `assets/` prefix for security. Existing branches allow any name. Create custom branches manually:
+
 ```bash
 git checkout --orphan my-custom-branch && git rm -rf . && git commit --allow-empty -m "Initialize" && git push origin my-custom-branch
 ```
@@ -869,33 +898,11 @@ safe-outputs:
     title-prefix: "[data]"      # prefix for issue titles (default: "[missing data]")
     labels: [data, blocked]     # labels to attach to issues
     max: 10                     # max reports per run (default: unlimited)
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
-
-**Why Missing Data Matters**
-
-AI agents work best when they acknowledge data gaps instead of inventing information. By explicitly reporting missing data, agents:
-- **Ensure accuracy**: Prevent hallucinations and incorrect outputs
-- **Enable improvement**: Help teams identify gaps in documentation, APIs, or configuration
-- **Demonstrate responsibility**: Show honest behavior that should be encouraged
-
-**Agent Output Format**
-
-```json
-{
-  "type": "missing_data",
-  "data_type": "user_preferences",
-  "reason": "User preferences database not accessible",
-  "context": "Needed to customize dashboard layout",
-  "alternatives": "Could use default settings"
-}
-```
-
-**Required Fields**: `data_type`, `reason`  
-**Optional Fields**: `context`, `alternatives`
-
-**Issue Creation**
 
 When `create-issue: true`, the agent creates or updates GitHub issues documenting missing data with:
+
 - Detailed explanation of what data is needed and why
 - Context about how the data would be used
 - Possible alternatives if the data cannot be provided
@@ -921,6 +928,7 @@ safe-outputs:
     max: 3                       # max discussions (default: 1)
     target-repo: "owner/repo"    # cross-repository
     fallback-to-issue: true      # fallback to issue creation on permission errors (default: true)
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 #### Fallback to Issue Creation
@@ -928,6 +936,7 @@ safe-outputs:
 The `fallback-to-issue` field (default: `true`) automatically falls back to creating an issue when discussion creation fails due to permissions errors. This is useful in repositories where discussions are not enabled or where the workflow lacks the necessary permissions to create discussions.
 
 When fallback is triggered:
+
 - An issue is created instead of a discussion
 - A note is added to the issue body indicating it was intended to be a discussion
 - The issue includes all the same content as the intended discussion
@@ -941,6 +950,7 @@ safe-outputs:
 ```
 
 Common scenarios where fallback is useful:
+
 - Repositories with discussions disabled
 - Insufficient permissions (requires `discussions: write`)
 - Organization policies restricting discussions
@@ -959,6 +969,7 @@ safe-outputs:
     required-title-prefix: "[ai]" # only close matching prefix
     max: 1                       # max closures (default: 1)
     target-repo: "owner/repo"    # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 **Target**: `"triggering"` (requires discussion event), `"*"` (any discussion), or number (specific discussion).
@@ -979,6 +990,7 @@ safe-outputs:
     max: 1                    # max updates (default: 1)
     target: "*"               # "triggering" (default), "*", or number
     target-repo: "owner/repo" # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 **Field Enablement**: Include `title:`, `body:`, or `labels:` keys to enable updates for those fields. Without these keys, the field cannot be updated. Setting `allowed-labels` implicitly enables label updates.
@@ -992,17 +1004,10 @@ When using `target: "*"`, the agent must provide `discussion_number` in the outp
 Triggers other workflows in the same repository using GitHub's `workflow_dispatch` event. This enables orchestration patterns, such as orchestrator workflows that coordinate multiple worker workflows.
 
 **Shorthand Syntax:**
+
 ```yaml wrap
 safe-outputs:
   dispatch-workflow: [worker-workflow, scanner-workflow]
-```
-
-**Detailed Syntax:**
-```yaml wrap
-safe-outputs:
-  dispatch-workflow:
-    workflows: [worker-workflow, scanner-workflow]
-    max: 3  # maximum dispatches (default: 1, max: 50)
 ```
 
 #### Configuration
@@ -1020,6 +1025,7 @@ At compile time, the compiler validates:
    - A standard GitHub Actions workflow (`.yml`)
 
 2. **workflow_dispatch trigger** - Each workflow must include `workflow_dispatch` in its `on:` trigger section:
+
    ```yaml
    on: [push, workflow_dispatch]  # or
    on:
@@ -1035,34 +1041,12 @@ At compile time, the compiler validates:
 
 4. **File resolution** - The compiler resolves the correct file extension (`.lock.yml` or `.yml`) at compile time and embeds it in the safe output configuration, ensuring the runtime handler dispatches the correct workflow file.
 
-#### How It Works: MCP Tool Generation
-
-When you configure `dispatch-workflow`, the compiler automatically generates MCP (Model Context Protocol) tools that the AI agent can call. Each workflow in your `workflows` list becomes a callable tool:
-
-**Example Configuration:**
-```yaml wrap
-safe-outputs:
-  dispatch-workflow:
-    workflows: [deploy-app, run-tests]
-```
-
-**Generated MCP Tools:**
-- `deploy_app` tool - Dispatches the deploy-app workflow
-- `run_tests` tool - Dispatches the run-tests workflow
-
-The compiler:
-1. **Reads workflow_dispatch inputs** from the target workflow's YAML
-2. **Generates MCP tool schemas** with matching input parameters
-3. **Validates workflow files** exist and support workflow_dispatch
-4. **Embeds tool definitions** in the compiled workflow
-
-This means the AI agent automatically knows what inputs each workflow expects and can call them directly as tools.
-
 #### Defining Workflow Inputs
 
 To enable the agent to provide inputs when dispatching workflows, define `workflow_dispatch` inputs in the target workflow:
 
 **Target Workflow Example (`deploy-app.md`):**
+
 ```yaml wrap
 ---
 on:
@@ -1089,213 +1073,23 @@ on:
 Deploys the application to the specified environment...
 ```
 
-**Agent Output Format:**
-
-When the agent calls the generated MCP tool, it produces:
-
-```json
-{
-  "type": "dispatch_workflow",
-  "workflow_name": "deploy-app",
-  "inputs": {
-    "environment": "staging",
-    "version": "v1.2.3",
-    "dry_run": false
-  }
-}
-```
-
-All input values are automatically converted to strings as required by GitHub's workflow_dispatch API:
-- Objects are JSON-stringified
-- Numbers and booleans are converted to strings
-- `null` and `undefined` become empty strings
-
 #### Rate Limiting
 
 To respect GitHub API rate limits, the handler automatically enforces a 5-second delay between consecutive workflow dispatches. The first dispatch has no delay.
 
-#### Best Practices
-
-**1. Always Define Explicit Inputs**
-
-When creating workflows that will be dispatched, explicitly define all required inputs in the `workflow_dispatch` section:
-
-```yaml wrap
----
-on:
-  workflow_dispatch:
-    inputs:
-      task_id:
-        description: "Unique task identifier"
-        required: true
-        type: string
-      priority:
-        description: "Task priority level"
-        required: false
-        type: choice
-        options: [low, medium, high]
-        default: medium
----
-```
-
-This ensures:
-- The MCP tool schema includes all expected parameters
-- The agent knows what information to provide
-- GitHub validates inputs at dispatch time
-
-**2. Use Descriptive Input Descriptions**
-
-Clear descriptions help the AI agent understand what information to provide:
-
-```yaml wrap
-# ✅ GOOD - Clear description
-repository_url:
-  description: "Full GitHub repository URL (e.g., https://github.com/owner/repo)"
-  required: true
-  type: string
-
-# ❌ BAD - Vague description
-repo:
-  description: "Repository"
-  type: string
-```
-
-**3. Use Choice Types for Limited Options**
-
-When inputs have a fixed set of valid values, use `type: choice`:
-
-```yaml wrap
-action:
-  description: "Action to perform"
-  required: true
-  type: choice
-  options: [analyze, fix, report]
-```
-
-This prevents the agent from providing invalid values and makes the interface clearer.
-
-**4. Provide Sensible Defaults**
-
-For optional inputs, provide defaults that work for the most common use case:
-
-```yaml wrap
-timeout:
-  description: "Maximum execution time in minutes"
-  required: false
-  type: number
-  default: 30
-```
-
-#### Troubleshooting
-
-**Problem: "Workflow file not found"**
-
-Error: `dispatch-workflow: workflow 'my-workflow' not found in .github/workflows/`
-
-**Solutions:**
-1. Ensure the workflow file exists in `.github/workflows/`
-2. Use the workflow name without extension (e.g., `my-workflow`, not `my-workflow.md`)
-3. Compile markdown workflows before dispatching: `gh aw compile my-workflow`
-
-**Problem: "Workflow does not support workflow_dispatch trigger"**
-
-Error: `dispatch-workflow: workflow 'my-workflow' does not support workflow_dispatch trigger`
-
-**Solution:** Add `workflow_dispatch` to the `on:` section of the target workflow:
-
-```yaml wrap
-on:
-  push:
-  workflow_dispatch:
-    inputs:
-      # Define your inputs here
-```
-
-**Problem: "Required input not provided"**
-
-The workflow is dispatched but GitHub rejects it due to missing required inputs.
-
-**Solution:** Ensure the target workflow defines its inputs and they match what the agent is providing:
-
-1. Check the target workflow's `workflow_dispatch.inputs` section
-2. Mark required inputs with `required: true`
-3. The agent will automatically know to provide these inputs based on the MCP tool schema
-
-**Problem: "Agent doesn't know what inputs to provide"**
-
-The agent dispatches the workflow but doesn't include necessary inputs.
-
-**Solutions:**
-1. **Define inputs explicitly** in the target workflow's `workflow_dispatch` section
-2. **Add clear descriptions** to help the agent understand what each input is for
-3. **Mark required inputs** with `required: true`
-4. **Update your dispatcher workflow's prompt** to mention specific inputs if needed
-
-**Example of well-defined inputs:**
-
-```yaml wrap
----
-on:
-  workflow_dispatch:
-    inputs:
-      tracker_id:
-        description: "Unique identifier for this orchestration run (e.g., 'run-2024-01-15-001')"
-        required: true
-        type: string
-      target_repos:
-        description: "JSON array of repository names to process (e.g., '[\"repo1\", \"repo2\"]')"
-        required: true
-        type: string
-      dry_run:
-        description: "If true, validate configuration without executing actions"
-        required: false
-        type: boolean
-        default: false
----
-```
-
-#### Security Considerations
+**Security Considerations**
 
 - **Same-repository only** - Cannot dispatch workflows in other repositories. This prevents cross-repository workflow triggering which could be a security risk.
 - **Allowlist enforcement** - Only workflows explicitly listed in the `workflows` configuration can be dispatched. Requests for unlisted workflows are rejected.
 - **Compile-time validation** - Workflows are validated at compile time to catch configuration errors early.
 
-#### Use Cases
-
-**Orchestration:**
-```yaml wrap
-safe-outputs:
-  dispatch-workflow:
-    workflows: [seeder-worker, processor-worker]
-    max: 2
-```
-
-An orchestrator workflow can dispatch seeder and worker workflows to discover and process work items.
-
-**Multi-Stage Pipelines:**
-```yaml wrap
-safe-outputs:
-  dispatch-workflow: [deploy-staging, run-tests]
-```
-
-A workflow can trigger deployment and testing workflows as separate, trackable runs.
-
-> [!WARNING]
-> **Workflow compilation required**: Markdown workflows (`.md` files) must be compiled to `.lock.yml` files before they can be dispatched. If you reference a workflow that only exists as `.md`, compilation will fail with an error asking you to run `gh aw compile <workflow-name>`.
-
-> [!TIP]
-> **Define workflow_dispatch inputs explicitly**: The compiler automatically generates MCP tool schemas based on the target workflow's `workflow_dispatch` inputs. Always define inputs in your target workflows to ensure the agent knows what parameters to provide.
-
-> [!NOTE]
-> **Input validation**: GitHub validates `workflow_dispatch` inputs at dispatch time. If the agent provides inputs that don't match the workflow's input schema (wrong type, missing required fields, invalid choices), the dispatch will fail with a validation error.
-
 ### Agent Session Creation (`create-agent-session:`)
 
-Creates Copilot coding agent sessions. Requires `COPILOT_GITHUB_TOKEN` or `GH_AW_GITHUB_TOKEN` PAT-default `GITHUB_TOKEN` lacks permissions.
+Creates Copilot coding agent sessions. Requires [`COPILOT_GITHUB_TOKEN`](/gh-aw/reference/auth/#copilot_github_token) or [`GH_AW_GITHUB_TOKEN`](/gh-aw/reference/auth/#gh_aw_github_token) PAT-default `GITHUB_TOKEN` lacks permissions.
 
 ### Assign to Agent (`assign-to-agent:`)
 
-Programmatically assigns GitHub Copilot coding agent to **existing** issues or pull requests through workflow automation. This safe output automates the [standard GitHub workflow for assigning issues to Copilot](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-a-pr#assigning-an-issue-to-copilot). Requires fine-grained PAT with actions, contents, issues, pull requests write access stored as `GH_AW_AGENT_TOKEN`, or GitHub App token. Supported agents: `copilot` (`copilot-swe-agent`).
+Programmatically assigns GitHub Copilot coding agent to **existing** issues or pull requests through workflow automation. This safe output automates the [standard GitHub workflow for assigning issues to Copilot](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-a-pr#assigning-an-issue-to-copilot). Requires fine-grained PAT with actions, contents, issues, pull requests write access stored as [`GH_AW_AGENT_TOKEN`](/gh-aw/reference/auth/#gh_aw_agent_token), or GitHub App token. Supported agents: `copilot` (`copilot-swe-agent`).
 
 Auto-resolves target from workflow context (issue/PR events) when `issue_number` or `pull_number` not explicitly provided. Restrict with `allowed` list. Target: `"triggering"` (default), `"*"` (any), or number.
 
@@ -1312,29 +1106,20 @@ safe-outputs:
     target-repo: "owner/repo"  # where the issue lives (cross-repository)
     pull-request-repo: "owner/repo"      # where the PR should be created (may differ from issue repo)
     allowed-pull-request-repos: [owner/repo1, owner/repo2]  # additional allowed PR repositories
+    base-branch: "develop"     # target branch for PR (default: target repo's default branch)
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
-**Model Selection:**
-The `model` parameter allows you to specify which AI model the Copilot agent should use. This is configured at the workflow level in the frontmatter and applies to all agent assignments in the workflow. Available options include:
-- `auto` - Auto-select model (default, currently Claude Sonnet 4.5)
-- `claude-sonnet-4.5` - Claude Sonnet 4.5
-- `claude-opus-4.5` - Claude Opus 4.5
-- `claude-opus-4.6` - Claude Opus 4.6
-- `gpt-5.1-codex-max` - GPT-5.1 Codex Max
-- `gpt-5.2-codex` - GPT-5.2 Codex
+**Target Issue or Pull Request:**
 
-**Custom Agent Configuration:**
-For advanced use cases, you can specify custom agent IDs and instructions in the frontmatter. These apply to all agent assignments in the workflow:
-- `custom-agent` - Custom agent identifier for specialized agent configurations
-- `custom-instructions` - Instructions to guide the agent's behavior when working on the task
-
-**Behavior:**
 - `target: "triggering"` - Auto-resolves from `github.event.issue.number` or `github.event.pull_request.number`
 - `target: "*"` - Requires explicit `issue_number` or `pull_number` in agent output
 - `target: "123"` - Always uses issue/PR #123
 
 **Cross-Repository PR Creation:**
+
 The `pull-request-repo` parameter allows you to create pull requests in a different repository than where the issue lives. This is useful when:
+
 - Issues are tracked in a central repository but code lives in separate repositories
 - You want to separate issue tracking from code repositories
 
@@ -1342,28 +1127,12 @@ When `pull-request-repo` is configured, Copilot will create the pull request in 
 
 The repository specified by `pull-request-repo` is automatically allowed - you don't need to list it in `allowed-pull-request-repos`. Use `allowed-pull-request-repos` to specify additional repositories where PRs can be created.
 
-You can also specify `pull_request_repo` on a per-assignment basis in the agent output using the `assign_to_agent` tool:
-```python
-assign_to_agent(issue_number=123, agent="copilot", pull_request_repo="owner/codebase-repo")
-```
+Use `base-branch` to specify which branch in the target repository the pull request should target. When omitted, the target repository's actual default branch is used automatically. Only relevant when `pull-request-repo` is configured.
 
 **Assignee Filtering:**
 When `allowed` list is configured, existing agent assignees not in the list are removed while regular user assignees are preserved.
 
-> [!TIP]
-> Assignment methods
-> 
-> Use `assign-to-agent` when you need to programmatically assign agents to **existing** issues or PRs through workflow automation. If you're creating new issues and want to assign an agent immediately, use `assignees: copilot` in your [`create-issue`](#issue-creation-create-issue) configuration instead, which is simpler:
-> 
-> ```yaml
-> safe-outputs:
->   create-issue:
->     assignees: copilot  # Assigns agent when creating issue
-> ```
-> 
-> **Important**: Both methods use the **same token** (`GH_AW_AGENT_TOKEN`) and **same GraphQL API** (`replaceActorsForAssignable` mutation) to assign copilot. When you use `assignees: copilot` in create-issue, the copilot assignee is automatically filtered out and assigned in a separate post-step using the agent token and GraphQL, identical to the `assign-to-agent` safe output.
-> 
-> Both methods result in the same outcome as [manually assigning issues to Copilot through the GitHub UI](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-a-pr#assigning-an-issue-to-copilot). See [Authentication](/gh-aw/reference/auth/#gh_aw_agent_token) for token configuration details and [GitHub's official Copilot coding agent documentation](https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent) for more about the Copilot coding agent.
+Use `assign-to-agent` when you need to programmatically assign agents to **existing** issues or PRs through workflow automation. If you're creating new issues and want to assign an agent immediately, use `assignees: copilot` in your [`create-issue`](#issue-creation-create-issue) configuration instead.
 
 ### Assign to User (`assign-to-user:`)
 
@@ -1376,6 +1145,8 @@ safe-outputs:
     max: 3                     # max assignments (default: 1)
     target: "*"                # "triggering" (default), "*", or number
     target-repo: "owner/repo"  # cross-repository
+    unassign-first: true       # unassign all current assignees before assigning (default: false)
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 ### Unassign from User (`unassign-from-user:`)
@@ -1389,65 +1160,37 @@ safe-outputs:
     max: 1                     # max unassignments (default: 1)
     target: "*"                # "triggering" (default), "*", or number
     target-repo: "owner/repo"  # cross-repository
+    github-token: ${{ secrets.SOME_CUSTOM_TOKEN }} # optional custom token for permissions
 ```
 
 ## Cross-Repository Operations
 
-Many safe outputs support `target-repo`. Requires PAT (`github-token` or `GH_AW_GITHUB_TOKEN`)-default `GITHUB_TOKEN` is current-repo only. Use specific names (no wildcards).
+Most safe outputs support `target-repo`. This will generally require an authorization option (`github-token` or `app:`)-to take effect.
 
 ```yaml wrap
 safe-outputs:
-  github-token: ${{ secrets.CROSS_REPO_PAT }}
   create-issue:
     target-repo: "org/tracking-repo"
+    github-token: ${{ secrets.CROSS_REPO_PAT }}
 ```
-
-## Automatically Added Tools
-
-When `create-pull-request` or `push-to-pull-request-branch` are configured, file editing tools (Edit, MultiEdit, Write, NotebookEdit) and git commands (`checkout`, `branch`, `switch`, `add`, `rm`, `commit`, `merge`) are automatically enabled.
-
-:::note[No Explicit Configuration Required]
-You do **not** need to add `git` to your `bash` allowlist when using PR-related safe outputs. The compiler automatically injects the necessary git commands during workflow compilation. 
-
-Even `bash: false` will be overridden with the minimum git commands needed for PR operations. Adding `bash: ["git"]` explicitly is allowed but redundant.
-:::
-
-## Security and Sanitization
-
-Auto-sanitization: XML escaped, HTTPS only, domain allowlist (GitHub by default), 0.5MB/65k line limits, control char stripping.
-
-```yaml wrap
-safe-outputs:
-  allowed-domains: [api.github.com]  # GitHub domains always included
-  allowed-github-references: []      # Escape all GitHub references
-```
-
-**Domain Filtering** (`allowed-domains`): Controls which domains are allowed in URLs. URLs from other domains are replaced with `(redacted)`.
-
-**Reference Escaping** (`allowed-github-references`): Controls which GitHub repository references (`#123`, `owner/repo#456`) are allowed in workflow output. When configured, references to unlisted repositories are escaped with backticks to prevent GitHub from creating timeline items. This is particularly useful for [SideRepoOps](/gh-aw/patterns/siderepoops/) workflows to prevent automation from cluttering your main repository's timeline.
-
-Configuration options:
-- `[]` - Escape all references (prevents all timeline items)
-- `["repo"]` - Allow only the target repository's references
-- `["repo", "owner/other-repo"]` - Allow specific repositories
-- Not specified (default) - All references allowed
-
-Example for clean automation:
-
-```yaml wrap
-safe-outputs:
-  allowed-github-references: []  # Escape all references
-  create-issue:
-    target-repo: "my-org/main-repo"
-```
-
-With `[]`, references like `#123` become `` `#123` `` and `other/repo#456` becomes `` `other/repo#456` ``, preventing timeline clutter while preserving the information.
 
 ## Global Configuration Options
 
+### Group Reports (`group-reports:`)
+
+Controls whether failed workflow runs are grouped under a parent "[agentics] Failed runs" issue. This is opt-in and defaults to `false`.
+
+```yaml wrap
+safe-outputs:
+  create-issue:
+  group-reports: true   # Enable parent issue grouping for failed runs (default: false)
+```
+
+When enabled, individual failed run reports are linked as sub-issues under a shared parent issue, making it easier to track recurring failures across workflow runs. When disabled (the default), each failure is reported independently.
+
 ### Custom GitHub Token (`github-token:`)
 
-Token precedence: `GH_AW_GITHUB_TOKEN` → `GITHUB_TOKEN` (default). Override globally or per safe output:
+Override for all safe outputs, or per safe output:
 
 ```yaml wrap
 safe-outputs:
@@ -1459,37 +1202,30 @@ safe-outputs:
 
 ### GitHub App Token (`app:`)
 
-Use GitHub App tokens for enhanced security: on-demand minting, auto-revocation, fine-grained permissions, better attribution. Supports config import from shared workflows.
+Use GitHub App tokens for enhanced security: on-demand token minting, automatic revocation, fine-grained permissions, and better attribution.
+
+See [GitHub App for Safe Outputs](/gh-aw/reference/auth/#github-app-for-safe-outputs) for configuration details and security benefits.
+
+### Text Sanitization (`allowed-domains:`, `allowed-github-references:`)
+
+The text output by AI agents is automatically sanitized to prevent injection of malicious content and ensure safe rendering on GitHub. The auto-sanitization applied is: XML escaped, HTTPS only, domain allowlist (GitHub by default), 0.5MB/65k line limits, control char stripping.
+
+You can configure sanitization options:
 
 ```yaml wrap
 safe-outputs:
-  app:
-    app-id: ${{ vars.APP_ID }}
-    private-key: ${{ secrets.APP_PRIVATE_KEY }}
-    owner: "my-org"                    # optional: installation owner
-    repositories: ["repo1", "repo2"]   # optional: scope to specific repos
-  create-issue:
+  allowed-domains: [api.github.com]  # GitHub domains always included
+  allowed-github-references: []      # Escape all GitHub references
 ```
 
-**Repository scoping options**:
+**Domain Filtering** (`allowed-domains`): Controls which domains are allowed in URLs. URLs from other domains are replaced with `(redacted)`.
 
-- `repositories: ["*"]` - Org-wide access (all repos in the installation)
-- `repositories: ["repo1", "repo2"]` - Specific repositories only
-- Omit `repositories` field - Current repository only (default)
+**Reference Escaping** (`allowed-github-references`): Controls which GitHub repository references (`#123`, `owner/repo#456`) are allowed in workflow output. When configured, references to unlisted repositories are escaped with backticks to prevent GitHub from creating timeline items. This is particularly useful for [SideRepoOps](/gh-aw/patterns/siderepoops/) workflows to prevent automation from cluttering your main repository's timeline.
 
-#### How GitHub App Tokens Work
-
-When you configure `app:` for safe outputs, tokens are **automatically managed per-job** for enhanced security:
-
-1. **Per-job token minting**: Each safe output job automatically mints its own token via `actions/create-github-app-token` with permissions explicitly scoped to that job's needs
-2. **Permission narrowing**: Token permissions are narrowed to match the job's `permissions:` block - only the permissions required for the safe outputs in that job are granted
-3. **Automatic revocation**: Tokens are explicitly revoked at job end via `DELETE /installation/token`, even if the job fails
-4. **Safe shared configuration**: A broadly-permissioned GitHub App can be safely shared across workflows because tokens are narrowed per-job
-
-> [!TIP]
-> **Why this matters**: You can configure a single GitHub App at the organization level with broad permissions (e.g., `contents: write`, `issues: write`, `pull-requests: write`), and each workflow job will only receive the specific subset of permissions it needs. This provides least-privilege access without requiring per-workflow App configuration.
-
-**Example**: If your workflow only uses `create-issue:`, the minted token will have `contents: read` + `issues: write`, even if your GitHub App has broader permissions configured.
+- `[]` - Escape all references (prevents all timeline items)
+- `["repo"]` - Allow only the target repository's references
+- `["repo", "owner/other-repo"]` - Allow specific repositories
+- Not specified (default) - All references allowed
 
 ### Maximum Patch Size (`max-patch-size:`)
 
@@ -1501,38 +1237,11 @@ safe-outputs:
   create-pull-request:
 ```
 
-## Assigning to Copilot
-
-Use `assignees: copilot` or `reviewers: copilot` for bot assignment. Requires `GH_AW_AGENT_TOKEN` (or fallback to `GH_AW_GITHUB_TOKEN`/`GITHUB_TOKEN`) - uses GraphQL API to assign the bot.
-
-## Custom Runner Image
+### Custom Runner Image
 
 Specify custom runner for safe output jobs (default: `ubuntu-slim`): `runs-on: ubuntu-22.04`
 
-## Threat Detection
-
-Auto-enabled. Analyzes output for prompt injection, secret leaks, malicious patches. See [Threat Detection Guide](/gh-aw/reference/threat-detection/).
-
-## Projects, Monitoring, and Orchestration Patterns
-
-Common combinations:
-
-- **Projects & Monitoring:** `create-issue` + `update-project` + `create-project-status-update`
-- **Orchestration:** `dispatch-workflow` (orchestrator/worker pattern), optionally paired with Projects updates
-
-See:
-- [Projects & Monitoring](/gh-aw/patterns/monitoring/)
-- [Orchestration](/gh-aw/patterns/orchestration/)
-
-## Footer Control
-
-Control whether AI-generated footers are added to created and updated GitHub items. See [Footer Control](/gh-aw/reference/footers/) for complete documentation on:
-- Global and per-handler footer control (`footer: true/false`)
-- XML marker preservation for searchability
-- Customizing footer messages with `messages.footer` template
-- Use cases and examples
-
-## Custom Messages (`messages:`)
+### Custom Messages (`messages:`)
 
 Customize notifications using template variables and Markdown. Import from shared workflows (local overrides imported).
 

@@ -457,10 +457,12 @@ type WorkflowData struct {
 	StrictMode            bool                 // strict mode for action pinning
 	SecretMasking         *SecretMaskingConfig // secret masking configuration
 	ParsedFrontmatter     *FrontmatterConfig   // cached parsed frontmatter configuration (for performance optimization)
+	RawFrontmatter        map[string]any       // raw parsed frontmatter map (for passing to hash functions without re-parsing)
 	ActionPinWarnings     map[string]bool      // cache of already-warned action pin failures (key: "repo@version")
 	ActionMode            ActionMode           // action mode for workflow compilation (dev, release, script)
 	HasExplicitGitHubTool bool                 // true if tools.github was explicitly configured in frontmatter
 	InlinePrompt          bool                 // if true, inline all markdown in YAML instead of runtime-import macros
+	InlinedImports        bool                 // if true, inline all imports at compile time (from inlined-imports frontmatter field)
 }
 
 // BaseSafeOutputConfig holds common configuration fields for all safe output types
@@ -522,6 +524,7 @@ type SafeOutputsConfig struct {
 	Messages                        *SafeOutputMessagesConfig              `yaml:"messages,omitempty"`                  // Custom message templates for footer and notifications
 	Mentions                        *MentionsConfig                        `yaml:"mentions,omitempty"`                  // Configuration for @mention filtering in safe outputs
 	Footer                          *bool                                  `yaml:"footer,omitempty"`                    // Global footer control - when false, omits visible footer from all safe outputs (XML markers still included)
+	GroupReports                    bool                                   `yaml:"group-reports,omitempty"`             // If true, create parent "Failed runs" issue for agent failures (default: false)
 }
 
 // SafeOutputMessagesConfig holds custom message templates for safe-output footer and notification messages

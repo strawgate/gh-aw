@@ -80,12 +80,12 @@ network:
 ```
 
 **Wildcard pattern behavior:**
+
 - `*.example.com` matches `sub.example.com`, `deep.nested.example.com`, and `example.com`
 - Only single wildcards at the start are supported (e.g., `*.*.example.com` is invalid)
 
 > [!TIP]
 > Both `example.com` and `*.example.com` match subdomains. Use wildcards when you want to explicitly document that subdomain access is expected.
-
 
 ## Protocol-Specific Filtering
 
@@ -97,16 +97,11 @@ network:
   allowed:
     - defaults
     - "https://secure.api.example.com"   # HTTPS-only
-    - "http://legacy.internal.com"       # HTTP-only (legacy systems)
+    - "http://legacy.internal.com"       # HTTP-only
     - "example.org"                      # Both protocols (default)
 sandbox:
   agent: awf  # Firewall enabled
 ```
-
-**Use Cases:**
-- **HTTPS-only**: External APIs, production services
-- **HTTP-only**: Legacy internal systems, development endpoints
-- **Mixed**: Gradual HTTP → HTTPS migration
 
 **Validation:** Invalid protocols (e.g., `ftp://`) are rejected at compile time.
 

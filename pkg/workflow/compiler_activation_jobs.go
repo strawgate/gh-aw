@@ -112,7 +112,7 @@ func (c *Compiler) buildPreActivationJob(data *WorkflowData, needsPermissionChec
 		steps = append(steps, fmt.Sprintf("        uses: %s\n", GetActionPin("actions/github-script")))
 		steps = append(steps, "        env:\n")
 		// Strip ANSI escape codes from stop-time value
-		cleanStopTime := stringutil.StripANSIEscapeCodes(data.StopTime)
+		cleanStopTime := stringutil.StripANSI(data.StopTime)
 		steps = append(steps, fmt.Sprintf("          GH_AW_STOP_TIME: %s\n", cleanStopTime))
 		steps = append(steps, fmt.Sprintf("          GH_AW_WORKFLOW_NAME: %q\n", workflowName))
 		steps = append(steps, "        with:\n")
@@ -459,6 +459,15 @@ func (c *Compiler) buildActivationJob(data *WorkflowData, preActivationJobCreate
 	// Activation job doesn't need project support (no safe outputs processed here)
 	steps = append(steps, c.generateSetupStep(setupActionRef, SetupActionDestination, false)...)
 
+	// Add context variable validation step to ensure numeric fields contain only integers
+	// This prevents malicious payloads from hiding special text or code in numeric fields
+	// The validation reads directly from the GitHub context object (no env vars needed)
+	steps = append(steps, "      - name: Validate context variables\n")
+	steps = append(steps, fmt.Sprintf("        uses: %s\n", GetActionPin("actions/github-script")))
+	steps = append(steps, "        with:\n")
+	steps = append(steps, "          script: |\n")
+	steps = append(steps, generateGitHubScriptWithRequire("validate_context_variables.cjs"))
+
 	// Checkout .github and .agents folders for accessing workflow configurations and runtime imports
 	// This is needed for prompt generation which may reference runtime imports from .github folder
 	// Always add this checkout in activation job since it needs access to workflow files for runtime imports
@@ -694,7 +703,7 @@ func (c *Compiler) buildActivationJob(data *WorkflowData, preActivationJobCreate
 	var environment string
 	if data.ManualApproval != "" {
 		// Strip ANSI escape codes from manual-approval environment name
-		cleanManualApproval := stringutil.StripANSIEscapeCodes(data.ManualApproval)
+		cleanManualApproval := stringutil.StripANSI(data.ManualApproval)
 		environment = fmt.Sprintf("environment: %s", cleanManualApproval)
 	}
 

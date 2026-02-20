@@ -1,6 +1,6 @@
 ---
 title: AI Engines (aka Coding Agents)
-description: Complete guide to AI engines (coding agents) usable with GitHub Agentic Workflows, including Copilot and custom engines with their specific configuration options.
+description: Complete guide to AI engines (coding agents) usable with GitHub Agentic Workflows, including Copilot, Claude, and Codex with their specific configuration options.
 sidebar:
   order: 600
 ---
@@ -86,6 +86,7 @@ engine:
   id: copilot
   version: latest                       # defaults to latest
   model: gpt-5                          # defaults to claude-sonnet-4
+  command: /usr/local/bin/copilot       # custom executable path
   args: ["--add-dir", "/workspace"]     # custom CLI arguments
   agent: agent-id                       # custom agent file identifier
 ```
@@ -102,7 +103,7 @@ engine:
 
 The `agent` field value should match the agent file name without the `.agent.md` extension. For example, `agent: technical-doc-writer` references `.github/agents/technical-doc-writer.agent.md`.
 
-See [Copilot Custom Agents](/gh-aw/reference/copilot-custom-agents/) for details on creating and configuring custom agents.
+See [Copilot Agent Filess](/gh-aw/reference/copilot-custom-agents/) for details on creating and configuring custom agents.
 
 ### Engine Environment Variables
 
@@ -130,6 +131,19 @@ engine:
 ```
 
 Arguments are added in order and placed before the `--prompt` flag. Common uses include adding directories (`--add-dir`), enabling verbose logging (`--verbose`, `--debug`), and passing engine-specific flags. Consult the specific engine's CLI documentation for available flags.
+
+### Custom Engine Command
+
+Override the default engine executable using the `command` field. Useful for testing pre-release versions, custom builds, or non-standard installations. Installation steps are automatically skipped.
+
+```yaml wrap
+engine:
+  id: copilot
+  command: /usr/local/bin/copilot-dev  # absolute path
+  args: ["--verbose"]
+```
+
+The command supports absolute paths (`/usr/local/bin/copilot`), relative paths (`./bin/claude`), environment variables (`$HOME/.local/bin/codex`), or commands in PATH.
 
 ## Related Documentation
 

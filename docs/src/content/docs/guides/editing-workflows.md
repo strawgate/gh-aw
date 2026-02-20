@@ -145,9 +145,6 @@ tools:
 
 ## Expressions and Environment Variables
 
-> [!CAUTION]
-> Adding GitHub Actions expressions (`${{ ... }}`) in the markdown body does NOT require recompilation, but they are subject to security validation.
-
 ### Allowed Expressions
 
 You can safely use these expressions in markdown without recompilation:

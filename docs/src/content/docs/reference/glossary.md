@@ -185,7 +185,11 @@ A GitHub Personal Access Token with granular permission control, specifying exac
 
 ### CLI (Command Line Interface)
 
-The `gh-aw` extension for GitHub CLI providing commands for managing agentic workflows: compile, run, status, logs, add, and project management.
+The `gh aw` extension for GitHub CLI providing commands for managing agentic workflows: compile, run, status, logs, add, and project management.
+
+### Playground
+
+An interactive web-based editor for authoring, compiling, and previewing agentic workflows without local installation. The Playground runs the gh-aw compiler in the browser using [WebAssembly](#webassembly-wasm) and auto-saves editor content to `localStorage` so work is preserved across sessions. Available at `/gh-aw/editor/`.
 
 ### Validation
 
@@ -199,7 +203,7 @@ A compilation target allowing the gh-aw compiler to run in browser environments 
 
 ### Cache Memory
 
-Persistent storage for workflows preserving data between runs. Configured via `cache-memory:` in tools section with 7-day retention in GitHub Actions cache. See [Memory Reference](/gh-aw/reference/memory/).
+Persistent storage for workflows preserving data between runs. Configured via `cache-memory:` in tools section with 7-day retention in GitHub Actions cache. See [Cache Memory](/gh-aw/reference/cache-memory/).
 
 ### Command Triggers
 
@@ -219,7 +223,7 @@ Configuration section in frontmatter defining environment variables for the work
 
 ### Repo Memory
 
-Persistent file storage via Git branches with unlimited retention. Unlike cache-memory (7-day retention), repo-memory stores files permanently in dedicated Git branches with automatic branch cloning, file access, commits, pushes, and merge conflict resolution. See [Memory Reference](/gh-aw/reference/memory/).
+Persistent file storage via Git branches with unlimited retention. Unlike cache-memory (7-day retention), repo-memory stores files permanently in dedicated Git branches with automatic branch cloning, file access, commits, pushes, and merge conflict resolution. See [Repo Memory](/gh-aw/reference/repo-memory/).
 
 ### Strict Mode
 

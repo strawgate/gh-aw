@@ -35,7 +35,7 @@ Before upgrading, ensure you have GitHub CLI (`gh`) v2.0.0+, the latest gh-aw ex
 
 ## Step 1: Upgrade the Extension
 
-Upgrade the `gh-aw` extension to get the latest features and codemods:
+Upgrade the `gh aw` extension to get the latest features and codemods:
 
 ```bash wrap
 gh extension upgrade gh-aw
@@ -147,13 +147,6 @@ Review changes with `git diff .github/workflows/` to verify that deprecated fiel
 ### Common Changes
 
 Typical migrations include `sandbox: false` → `sandbox.agent: false`, `daily at` → `daily around`, and removal of deprecated `network.firewall` and `safe-inputs.mode` fields. Use `git diff --word-diff` for detailed comparison.
-
-> [!CAUTION]
-> Breaking Changes
->
-> **`timeout_minutes` Removed:** The underscore variant `timeout_minutes` has been completely removed from the schema. Workflows using this field will fail compilation. Use `timeout-minutes` (with hyphen) instead.
->
-> **`sandbox: false` Changed:** Top-level `sandbox: false` is no longer supported. Use `sandbox.agent: false` instead to disable only the agent firewall. The MCP gateway remains enabled and cannot be disabled. The `gh aw fix` command includes a codemod to automatically migrate this change.
 
 ## Step 5: Verify Compilation
 

@@ -13,7 +13,22 @@ const mockCore = {
   },
 };
 
+const mockContext = {
+  eventName: "pull_request",
+  repo: {
+    owner: "test-owner",
+    repo: "test-repo",
+  },
+  payload: {
+    pull_request: {
+      number: 123,
+      head: { sha: "test-sha" },
+    },
+  },
+};
+
 global.core = mockCore;
+global.context = mockContext;
 
 const { createReviewBuffer } = require("./pr_review_buffer.cjs");
 
@@ -23,6 +38,21 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+
+    // Reset context to default for each test
+    global.context = {
+      eventName: "pull_request",
+      repo: {
+        owner: "test-owner",
+        repo: "test-repo",
+      },
+      payload: {
+        pull_request: {
+          number: 123,
+          head: { sha: "test-sha" },
+        },
+      },
+    };
 
     // Create a fresh buffer for each test (factory pattern, no global state)
     buffer = createReviewBuffer();
@@ -245,8 +275,9 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
   });
 
   it("should set review context from triggering PR for body-only reviews", async () => {
-    // Simulate a PR trigger context
+    // Simulate a PR trigger context (resolveTarget uses eventName)
     global.context = {
+      eventName: "pull_request",
       repo: { owner: "test-owner", repo: "test-repo" },
       payload: {
         pull_request: { number: 42, head: { sha: "abc123" } },
@@ -274,8 +305,127 @@ describe("submit_pr_review (Handler Factory Architecture)", () => {
     expect(ctx.repo).toBe("test-owner/test-repo");
     expect(ctx.pullRequestNumber).toBe(42);
 
-    // Clean up
     delete global.context;
+  });
+
+  it("should set review context from target config when explicit PR number (e.g. workflow_dispatch)", async () => {
+    const fetchedPR = {
+      number: 99,
+      head: { sha: "fetched-sha" },
+      user: { login: "author" },
+    };
+    global.context = {
+      eventName: "workflow_dispatch",
+      repo: { owner: "my-owner", repo: "my-repo" },
+      payload: {},
+    };
+    global.github = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({ data: fetchedPR }),
+        },
+      },
+    };
+
+    const localBuffer = createReviewBuffer();
+    const { main } = require("./submit_pr_review.cjs");
+    const localHandler = await main({ max: 1, target: "99", _prReviewBuffer: localBuffer });
+
+    const message = {
+      type: "submit_pull_request_review",
+      body: "Approved via target",
+      event: "APPROVE",
+    };
+
+    const result = await localHandler(message, {});
+
+    expect(result.success).toBe(true);
+    expect(localBuffer.hasReviewMetadata()).toBe(true);
+    const ctx = localBuffer.getReviewContext();
+    expect(ctx).not.toBeNull();
+    expect(ctx.repo).toBe("my-owner/my-repo");
+    expect(ctx.pullRequestNumber).toBe(99);
+    expect(ctx.pullRequest.head.sha).toBe("fetched-sha");
+    expect(global.github.rest.pulls.get).toHaveBeenCalledWith({
+      owner: "my-owner",
+      repo: "my-repo",
+      pull_number: 99,
+    });
+
+    delete global.context;
+    delete global.github;
+  });
+
+  it("should not set review context when target is triggering and not in PR context", async () => {
+    global.context = {
+      eventName: "workflow_dispatch",
+      repo: { owner: "o", repo: "r" },
+      payload: {},
+    };
+
+    const localBuffer = createReviewBuffer();
+    const { main } = require("./submit_pr_review.cjs");
+    const localHandler = await main({ max: 1, _prReviewBuffer: localBuffer });
+
+    const message = {
+      type: "submit_pull_request_review",
+      body: "Review",
+      event: "COMMENT",
+    };
+
+    const result = await localHandler(message, {});
+
+    expect(result.success).toBe(true);
+    expect(localBuffer.hasReviewMetadata()).toBe(true);
+    expect(localBuffer.getReviewContext()).toBeNull();
+
+    delete global.context;
+  });
+
+  it("should set review context from target '*' with message.pull_request_number", async () => {
+    const fetchedPR = {
+      number: 5,
+      head: { sha: "sha5" },
+      user: { login: "u" },
+    };
+    global.context = {
+      eventName: "workflow_dispatch",
+      repo: { owner: "o", repo: "r" },
+      payload: {},
+    };
+    global.github = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({ data: fetchedPR }),
+        },
+      },
+    };
+
+    const localBuffer = createReviewBuffer();
+    const { main } = require("./submit_pr_review.cjs");
+    const localHandler = await main({ max: 1, target: "*", _prReviewBuffer: localBuffer });
+
+    const message = {
+      type: "submit_pull_request_review",
+      body: "Review",
+      event: "APPROVE",
+      pull_request_number: 5,
+    };
+
+    const result = await localHandler(message, {});
+
+    expect(result.success).toBe(true);
+    const ctx = localBuffer.getReviewContext();
+    expect(ctx).not.toBeNull();
+    expect(ctx.pullRequestNumber).toBe(5);
+    expect(global.github.rest.pulls.get).toHaveBeenCalledWith({
+      owner: "o",
+      repo: "r",
+      pull_number: 5,
+    });
+
+    delete global.context;
+    delete global.github;
   });
 
   it("should not override existing review context from comments", async () => {

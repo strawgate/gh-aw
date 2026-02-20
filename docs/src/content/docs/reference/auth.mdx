@@ -84,6 +84,9 @@ Then add the PAT to your GitHub Actions repository secrets as `COPILOT_GITHUB_TO
 gh aw secrets set COPILOT_GITHUB_TOKEN --value "<your-github-pat>"
 ```
 
+> [!TIP]
+> If your workflow fails at the Copilot inference step even with the token set, verify that the token owner's account has an active Copilot license. See [Copilot License or Inference Access Issues](/gh-aw/troubleshooting/common-issues/#copilot-license-or-inference-access-issues) for a local diagnostic step.
+
 <Video
   src="/gh-aw/videos/create-pat-user-copilot.mp4"
   caption="Creating a fine-grained PAT for user-owned repositories with Copilot permissions"
@@ -376,15 +379,13 @@ Both methods result in the same outcome as [manually assigning issues to Copilot
 
 ---
 
-## Using a GitHub App for authentication
+## Using a GitHub App for Authentication
 
 For enhanced security with short-lived tokens, you may configure a GitHub App instead of using PATs.
 
-This does not apply to `COPILOT_GITHUB_TOKEN`, which must currently be a PAT. A single GitHub App can be used for all other GitHub tokens.
+This does not apply to `COPILOT_GITHUB_TOKEN`, which must currently be a PAT. A single GitHub App can be used for all other GitHub authentication needs in GitHub Agentic Workflows, including tool authentication and safe outputs.
 
-After creating your app, there are two ways to configure it in your workflow:
-
-**Option 1: Direct configuration** (more control)
+After creating your app, configure it in your workflow:
 
 ```yaml wrap
 permissions:
@@ -402,40 +403,38 @@ tools:
       repositories: ["repo1", "repo2"]   # Optional: defaults to current repo only
 ```
 
-**Option 2: Shared workflow** (recommended - centralized configuration)
-
-Use the provided shared workflow for centralized configuration:
-
-```yaml wrap
-imports:
-  - shared/github-mcp-app.md  # Provides APP_ID and APP_PRIVATE_KEY configuration
-
-permissions:
-  contents: read
-  issues: read
-
-tools:
-  github:
-    mode: remote
-    toolsets: [repos, issues, pull_requests]
-```
-
-The shared workflow (`shared/github-mcp-app.md`) expects:
-- **Repository Variable**: `APP_ID` - Your GitHub App ID
-- **Repository Secret**: `APP_PRIVATE_KEY` - Your GitHub App private key
-
-Set up repository variables and secrets:
+Make sure you set up repository variables and secrets:
 
 ```bash wrap
 gh variable set APP_ID --body "123456"
 gh aw secrets set APP_PRIVATE_KEY --value "$(cat path/to/private-key.pem)"
 ```
 
-**How it works**:
-
 At workflow start, a token is automatically minted with **permissions matching your job's `permissions:` field**. The token is passed to the GitHub MCP server and automatically revoked at workflow end (even on failure).
 
-This is the same per-job narrowing behavior used by `safe-outputs.app:` - see the [Safe Outputs documentation](/gh-aw/reference/safe-outputs/#github-app-token-app) for a detailed explanation of how GitHub App tokens are narrowed per-job.
+### GitHub App for Safe Outputs
+
+You can also use GitHub App tokens for safe outputs operations:
+
+```yaml wrap
+safe-outputs:
+  app:
+    app-id: ${{ vars.APP_ID }}
+    private-key: ${{ secrets.APP_PRIVATE_KEY }}
+    owner: "my-org"                    # optional: installation owner
+    repositories: ["repo1", "repo2"]   # optional: scope to specific repos
+  create-issue:
+```
+
+When you configure `app:` for safe outputs, tokens are minted with permissions specific to the safe output operations being performed, rather than the broader job-level permissions. This provides enhanced security by ensuring that tokens have the minimum necessary permissions for their specific use case.
+
+### Repository Scoping with GitHub App Tokens
+
+For both tool authentication and safe outputs, you can scope the GitHub App token to specific repositories for enhanced security. This limits the token's access to only the repositories it needs to interact with.
+
+- Omit `repositories` field - Current repository only (default)
+- `repositories: ["*"]` - Org-wide access (all repos in the installation)
+- `repositories: ["repo1", "repo2"]` - Specific repositories only
 
 ## Who owns a GitHub token?
 

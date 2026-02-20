@@ -159,7 +159,7 @@ func getFieldExample(fieldPath string, err error) string {
 	// Map of common fields to their examples
 	fieldExamples := map[string]string{
 		"timeout-minutes": "Example: timeout-minutes: 10",
-		"engine":          "Valid engines are: copilot, claude, codex, custom. Example: engine: copilot",
+		"engine":          "Valid engines are: copilot, claude, codex. Example: engine: copilot",
 		"permissions":     "Example: permissions:\\n  contents: read\\n  issues: write",
 		"on":              "Example: on: push or on:\\n  issues:\\n    types: [opened]",
 		"runs-on":         "Example: runs-on: ubuntu-latest",

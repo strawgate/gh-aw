@@ -637,7 +637,7 @@ roles: all                         # Least restrictive
 
 The sandbox isolation layer provides process-level and container-level isolation for AI agents and MCP servers.
 
-### 8.2 Agent Sandbox
+### 8.2 Coding Agent Sandbox
 
 **SI-01**: A conforming implementation MUST execute AI agents in isolated environments.
 

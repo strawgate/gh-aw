@@ -59,20 +59,6 @@ func TestAgentVersionInAwInfo(t *testing.T) {
 			expectedAgentVersion: string(constants.DefaultCodexVersion),
 			description:          "Should use default version when not provided",
 		},
-		{
-			name:                 "Custom engine with explicit version",
-			engineID:             "custom",
-			explicitVersion:      "1.0.0",
-			expectedAgentVersion: "1.0.0",
-			description:          "Should use explicit version when provided",
-		},
-		{
-			name:                 "Custom engine without version",
-			engineID:             "custom",
-			explicitVersion:      "",
-			expectedAgentVersion: "",
-			description:          "Should use empty string for custom engines without version",
-		},
 	}
 
 	for _, tt := range tests {
@@ -162,12 +148,6 @@ func TestGetInstallationVersion(t *testing.T) {
 			engineID:        "codex",
 			explicitVersion: "",
 			expectedVersion: string(constants.DefaultCodexVersion),
-		},
-		{
-			name:            "Custom engine without version",
-			engineID:        "custom",
-			explicitVersion: "",
-			expectedVersion: "",
 		},
 	}
 

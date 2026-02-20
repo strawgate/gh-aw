@@ -11,6 +11,7 @@ const HANDLER_TYPE = "remove_labels";
 const { validateLabels } = require("./safe_output_validator.cjs");
 const { getErrorMessage } = require("./error_helpers.cjs");
 const { resolveTargetRepoConfig, resolveAndValidateRepo } = require("./repo_helpers.cjs");
+const { logStagedPreviewInfo } = require("./staged_preview.cjs");
 
 /**
  * Main handler factory for remove_labels
@@ -20,6 +21,7 @@ const { resolveTargetRepoConfig, resolveAndValidateRepo } = require("./repo_help
 async function main(config = {}) {
   // Extract configuration
   const allowedLabels = config.allowed || [];
+  const blockedPatterns = config.blocked || [];
   const maxCount = config.max || 10;
   const { defaultTargetRepo, allowedRepos } = resolveTargetRepoConfig(config);
 
@@ -29,6 +31,9 @@ async function main(config = {}) {
   core.info(`Remove labels configuration: max=${maxCount}`);
   if (allowedLabels.length > 0) {
     core.info(`Allowed labels to remove: ${allowedLabels.join(", ")}`);
+  }
+  if (blockedPatterns.length > 0) {
+    core.info(`Blocked patterns: ${blockedPatterns.join(", ")}`);
   }
   core.info(`Default target repo: ${defaultTargetRepo}`);
   if (allowedRepos.size > 0) {
@@ -100,7 +105,7 @@ async function main(config = {}) {
     }
 
     // Use validation helper to sanitize and validate labels
-    const labelsResult = validateLabels(requestedLabels, allowedLabels, maxCount);
+    const labelsResult = validateLabels(requestedLabels, allowedLabels, maxCount, blockedPatterns);
     if (!labelsResult.valid) {
       // If no valid labels, log info and return gracefully
       if (labelsResult.error?.includes("No valid labels")) {
@@ -136,7 +141,7 @@ async function main(config = {}) {
 
     // If in staged mode, preview the label removal without actually removing
     if (isStaged) {
-      core.info(`Staged mode: Would remove ${uniqueLabels.length} labels from ${contextType} #${itemNumber} in ${itemRepo}`);
+      logStagedPreviewInfo(`Would remove ${uniqueLabels.length} labels from ${contextType} #${itemNumber} in ${itemRepo}`);
       return {
         success: true,
         staged: true,

@@ -76,35 +76,9 @@ The PAT needs permissions **only on target repositories** where you want to crea
 
 ### GitHub App Installation Token
 
-For enhanced security, use GitHub Apps with automatic token revocation:
+For enhanced security, use GitHub Apps with automatic token revocation. GitHub App tokens provide per-job minting, automatic revocation after job completion, fine-grained permissions, and better attribution than long-lived PATs.
 
-**Specific repositories:**
-
-```yaml wrap
-safe-outputs:
-  app:
-    app-id: ${{ vars.APP_ID }}
-    private-key: ${{ secrets.APP_PRIVATE_KEY }}
-    owner: "my-org"
-    repositories: ["repo1", "repo2", "repo3"]
-  create-issue:
-    target-repo: "my-org/repo1"
-```
-
-**Org-wide access** (all repos in installation):
-
-```yaml wrap
-safe-outputs:
-  app:
-    app-id: ${{ vars.APP_ID }}
-    private-key: ${{ secrets.APP_PRIVATE_KEY }}
-    owner: "my-org"
-    repositories: ["*"]  # Access all repos
-  create-issue:
-    target-repo: "my-org/repo1"
-```
-
-See [Safe Outputs Reference](/gh-aw/reference/safe-outputs/) for complete authentication configuration.
+See [GitHub App for Safe Outputs](/gh-aw/reference/auth/#github-app-for-safe-outputs) for complete configuration including specific repository scoping and org-wide access.
 
 ## Common MultiRepoOps Patterns
 
@@ -185,12 +159,12 @@ Compare code structure between this repo and org/reference-repo.
 
 ## Deterministic Multi-Repo Workflows
 
-For direct repository access without agent involvement, use custom engine with multiple checkouts:
+For direct repository access without agent involvement, use an AI engine with custom steps:
 
 ```aw wrap
 ---
 engine:
-  id: custom
+  id: claude
   steps:
     - name: Checkout main repo
       uses: actions/checkout@v5
@@ -216,7 +190,7 @@ engine:
 
 # Deterministic Feature Sync
 
-Custom workflow that directly checks out multiple repos and synchronizes files.
+Workflow that directly checks out multiple repos and synchronizes files.
 ```
 
 ## Example Workflows
@@ -285,4 +259,4 @@ For organization-wide workflows:
 - [Safe Outputs Reference](/gh-aw/reference/safe-outputs/) - Complete safe output configuration
 - [GitHub Tools](/gh-aw/reference/tools/#github-tools-github) - GitHub API toolsets
 - [Security Best Practices](/gh-aw/introduction/architecture/) - Authentication and token security
-- [Packaging & Distribution](/gh-aw/guides/packaging-imports/) - Sharing workflows across repos
+- [Reusing Workflows](/gh-aw/guides/packaging-imports/) - Sharing workflows across repos

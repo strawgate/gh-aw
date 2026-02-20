@@ -76,6 +76,14 @@ func (c *Compiler) setupEngineAndImports(result *parser.FrontmatterResult, clean
 		return nil, err
 	}
 
+	// Validate env secrets regardless of strict mode (error in strict, warning in non-strict)
+	if err := c.validateEnvSecrets(result.Frontmatter); err != nil {
+		orchestratorEngineLog.Printf("Env secrets validation failed: %v", err)
+		// Restore strict mode before returning error
+		c.strictMode = initialStrictMode
+		return nil, err
+	}
+
 	// Restore the initial strict mode state after validation
 	// This ensures strict mode doesn't leak to other workflows being compiled
 	c.strictMode = initialStrictMode
@@ -97,6 +105,10 @@ func (c *Compiler) setupEngineAndImports(result *parser.FrontmatterResult, clean
 	importsResult, err := parser.ProcessImportsFromFrontmatterWithSource(result.Frontmatter, markdownDir, importCache, cleanPath, string(content))
 	if err != nil {
 		orchestratorEngineLog.Printf("Import processing failed: %v", err)
+		// Format ImportCycleError with detailed chain display
+		if cycleErr, ok := err.(*parser.ImportCycleError); ok {
+			return nil, parser.FormatImportCycleError(cycleErr)
+		}
 		return nil, err // Error is already formatted with source location
 	}
 
@@ -118,7 +130,7 @@ func (c *Compiler) setupEngineAndImports(result *parser.FrontmatterResult, clean
 			fmt.Fprintf(os.Stderr, "WARNING: Skipping security scan for unresolvable import '%s': %v\n", importedFile, resolveErr)
 			continue
 		}
-		importContent, readErr := os.ReadFile(fullPath)
+		importContent, readErr := parser.ReadFile(fullPath)
 		if readErr != nil {
 			orchestratorEngineLog.Printf("Skipping security scan for unreadable import: %s: %v", fullPath, readErr)
 			fmt.Fprintf(os.Stderr, "WARNING: Skipping security scan for unreadable import '%s' (resolved path: %s): %v\n", importedFile, fullPath, readErr)
@@ -126,7 +138,7 @@ func (c *Compiler) setupEngineAndImports(result *parser.FrontmatterResult, clean
 		}
 		if findings := ScanMarkdownSecurity(string(importContent)); len(findings) > 0 {
 			orchestratorEngineLog.Printf("Security scan failed for imported file: %s (%d findings)", importedFile, len(findings))
-			return nil, fmt.Errorf("imported workflow '%s' failed security scan: %s", importedFile, FormatSecurityFindings(findings))
+			return nil, fmt.Errorf("imported workflow '%s' failed security scan: %s", importedFile, FormatSecurityFindings(findings, importedFile))
 		}
 	}
 
@@ -260,6 +272,15 @@ func (c *Compiler) setupEngineAndImports(result *parser.FrontmatterResult, clean
 	orchestratorEngineLog.Printf("Validating imported steps for agentic secrets (strict=%v)", c.strictMode)
 	if err := c.validateImportedStepsNoAgenticSecrets(engineConfig, engineSetting); err != nil {
 		orchestratorEngineLog.Printf("Imported steps validation failed: %v", err)
+		// Restore strict mode before returning error
+		c.strictMode = initialStrictModeForFirewall
+		return nil, err
+	}
+
+	// Validate that actions/checkout steps in the agent job include persist-credentials: false
+	orchestratorEngineLog.Printf("Validating checkout persist-credentials (strict=%v)", c.strictMode)
+	if err := c.validateCheckoutPersistCredentials(result.Frontmatter, importsResult.MergedSteps); err != nil {
+		orchestratorEngineLog.Printf("Checkout persist-credentials validation failed: %v", err)
 		// Restore strict mode before returning error
 		c.strictMode = initialStrictModeForFirewall
 		return nil, err

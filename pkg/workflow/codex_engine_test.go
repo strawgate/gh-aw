@@ -70,8 +70,8 @@ func TestCodexEngine(t *testing.T) {
 	// Check the execution step
 	stepContent := strings.Join([]string(execSteps[0]), "\n")
 
-	if !strings.Contains(stepContent, "name: Run Codex") {
-		t.Errorf("Expected step name 'Run Codex' in step content:\n%s", stepContent)
+	if !strings.Contains(stepContent, "name: Execute Codex") {
+		t.Errorf("Expected step name 'Execute Codex' in step content:\n%s", stepContent)
 	}
 
 	if strings.Contains(stepContent, "uses:") {
@@ -308,7 +308,7 @@ func TestCodexEngineRenderMCPConfig(t *testing.T) {
 				"user_agent = \"test-workflow\"",
 				"startup_timeout_sec = 120",
 				"tool_timeout_sec = 60",
-				"container = \"ghcr.io/github/github-mcp-server:v0.30.3\"",
+				fmt.Sprintf("container = \"ghcr.io/github/github-mcp-server:%s\"", constants.DefaultGitHubMCPServerVersion),
 				"env = { \"GITHUB_PERSONAL_ACCESS_TOKEN\" = \"$GH_AW_GITHUB_TOKEN\", \"GITHUB_READ_ONLY\" = \"1\", \"GITHUB_TOOLSETS\" = \"context,repos,issues,pull_requests\" }",
 				"env_vars = [\"GITHUB_PERSONAL_ACCESS_TOKEN\", \"GITHUB_READ_ONLY\", \"GITHUB_TOOLSETS\"]",
 				"GH_AW_MCP_CONFIG_EOF",
@@ -318,7 +318,7 @@ func TestCodexEngineRenderMCPConfig(t *testing.T) {
 				"{",
 				"\"mcpServers\": {",
 				"\"github\": {",
-				"\"container\": \"ghcr.io/github/github-mcp-server:v0.30.3\",",
+				fmt.Sprintf("\"container\": \"ghcr.io/github/github-mcp-server:%s\",", constants.DefaultGitHubMCPServerVersion),
 				"\"env\": {",
 				"\"GITHUB_LOCKDOWN_MODE\": \"$GITHUB_MCP_LOCKDOWN\",",
 				"\"GITHUB_PERSONAL_ACCESS_TOKEN\": \"$GITHUB_MCP_SERVER_TOKEN\",",

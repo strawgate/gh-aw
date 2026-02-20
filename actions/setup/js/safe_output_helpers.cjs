@@ -307,6 +307,32 @@ function extractAssignees(message) {
   return requestedAssignees;
 }
 
+/**
+ * Check if a username matches a blocked pattern
+ * Supports exact matching and glob-style patterns (e.g., "*[bot]")
+ * @param {string} username - The username to check
+ * @param {string} pattern - The pattern to match against (e.g., "copilot", "*[bot]")
+ * @returns {boolean} True if username matches the blocked pattern
+ */
+function matchesBlockedPattern(username, pattern) {
+  const { matchesSimpleGlob } = require("./glob_pattern_helpers.cjs");
+  return matchesSimpleGlob(username, pattern);
+}
+
+/**
+ * Check if a username is blocked by any pattern in the blocked list
+ * @param {string} username - The username to check
+ * @param {string[]|undefined} blockedPatterns - Array of blocked patterns (e.g., ["copilot", "*[bot]"])
+ * @returns {boolean} True if username is blocked
+ */
+function isUsernameBlocked(username, blockedPatterns) {
+  if (!blockedPatterns || blockedPatterns.length === 0) {
+    return false;
+  }
+
+  return blockedPatterns.some(pattern => matchesBlockedPattern(username, pattern));
+}
+
 module.exports = {
   parseAllowedItems,
   parseMaxCount,
@@ -314,4 +340,6 @@ module.exports = {
   loadCustomSafeOutputJobTypes,
   resolveIssueNumber,
   extractAssignees,
+  matchesBlockedPattern,
+  isUsernameBlocked,
 };

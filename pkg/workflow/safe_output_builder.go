@@ -36,7 +36,7 @@ type SafeOutputDiscussionFilterConfig struct {
 
 // ParseTargetConfig parses target and target-repo fields from a config map.
 // Returns the parsed SafeOutputTargetConfig and a boolean indicating if there was a validation error.
-// If target-repo is "*" (wildcard), it returns an error (second return value is true).
+// target-repo accepts "*" (wildcard) to indicate that any repository can be targeted.
 func ParseTargetConfig(configMap map[string]any) (SafeOutputTargetConfig, bool) {
 	safeOutputBuilderLog.Print("Parsing target config from map")
 	config := SafeOutputTargetConfig{}
@@ -49,13 +49,8 @@ func ParseTargetConfig(configMap map[string]any) (SafeOutputTargetConfig, bool) 
 		}
 	}
 
-	// Parse target-repo using shared helper with validation
-	targetRepoSlug, isInvalid := parseTargetRepoWithValidation(configMap)
-	if isInvalid {
-		safeOutputBuilderLog.Print("Target repo validation failed")
-		return config, true // Return true to indicate validation error
-	}
-	config.TargetRepoSlug = targetRepoSlug
+	// Parse target-repo; wildcard "*" is allowed and means "any repository"
+	config.TargetRepoSlug = parseTargetRepoFromConfig(configMap)
 
 	return config, false
 }
@@ -218,6 +213,7 @@ func BuildCloseJobEnvVars(prefix string, config CloseJobConfig) []string {
 type ListJobConfig struct {
 	SafeOutputTargetConfig `yaml:",inline"`
 	Allowed                []string `yaml:"allowed,omitempty"` // Optional list of allowed values
+	Blocked                []string `yaml:"blocked,omitempty"` // Optional list of blocked patterns (supports glob patterns)
 }
 
 // ParseListJobConfig parses common list job fields from a config map.
@@ -247,6 +243,21 @@ func ParseListJobConfig(configMap map[string]any, allowedKey string) (ListJobCon
 		}
 	}
 
+	// Parse blocked list
+	if blocked, exists := configMap["blocked"]; exists {
+		// Handle single string format
+		if blockedStr, ok := blocked.(string); ok {
+			config.Blocked = []string{blockedStr}
+		} else if blockedArray, ok := blocked.([]any); ok {
+			// Handle array format
+			for _, item := range blockedArray {
+				if itemStr, ok := item.(string); ok {
+					config.Blocked = append(config.Blocked, itemStr)
+				}
+			}
+		}
+	}
+
 	return config, false
 }
 
@@ -258,6 +269,9 @@ func BuildListJobEnvVars(prefix string, config ListJobConfig, maxCount int) []st
 
 	// Add allowed list
 	envVars = append(envVars, BuildAllowedListEnvVar(prefix+"_ALLOWED", config.Allowed)...)
+
+	// Add blocked list
+	envVars = append(envVars, BuildAllowedListEnvVar(prefix+"_BLOCKED", config.Blocked)...)
 
 	// Add max count
 	envVars = append(envVars, BuildMaxCountEnvVar(prefix+"_MAX_COUNT", maxCount)...)

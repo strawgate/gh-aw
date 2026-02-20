@@ -12,7 +12,6 @@ engine: claude
 network: 
    allowed: [defaults, node, "api.github.com", "ghcr.io"]
 imports:
-  - shared/mood.md
   - shared/jqschema.md
   - shared/reporting.md
 tools:
@@ -26,6 +25,7 @@ safe-outputs:
     expires: 2d
     title-prefix: "[ca] "
     labels: [automation, dependencies, cookie]
+    close-older-issues: true
 timeout-minutes: 45
 ---
 

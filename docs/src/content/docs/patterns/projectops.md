@@ -20,12 +20,14 @@ Safe outputs handle all project operations in separate, scoped jobs with minimal
 #### User-owned Projects (v2)
 
 Use a **classic PAT** with scopes:
+
 - `project` (required for user Projects)
 - `repo` (required if accessing private repositories)
 
 #### Organization-owned Projects (v2)
 
 Use a **fine-grained** PAT with scopes:
+
 - Repository access: Select specific repos that will use the workflow
 - Repository permissions:
   - Contents: Read
@@ -98,22 +100,26 @@ Each safe output operates in a separate job with minimal, scoped permissions. Se
 ## Key Capabilities
 
 **Project Creation and Management**
+
 - Create new Projects V2 boards programmatically
 - Add issues and pull requests to projects with duplicate prevention
 - Update project status with automated progress summaries
 
 **Field Management**
+
 - Set status, priority, effort, and sprint fields
 - Update custom date fields (start date, end date) for timeline tracking
 - Support for TEXT, DATE, NUMBER, ITERATION, and SINGLE_SELECT field types
 - Automatic field option creation for single-select fields
 
 **View Configuration**
+
 - Automatically create project views (table, board, roadmap)
 - Configure view filters and visible fields
 - Support for swimlane grouping by custom fields
 
 **Orchestration & Monitoring**
+
 - Use Projects as a shared dashboard across runs/workflows
 - Post status updates with health indicators
 - Coordinate work across repositories and workflows (optionally with an orchestrator/worker setup)
@@ -130,33 +136,13 @@ ProjectOps complements [GitHub's built-in Projects automation](https://docs.gith
 - **Automated project creation** - Create new project boards programmatically based on initiative needs
 - **Status tracking** - Generate automated progress summaries with health indicators
 
-## Best Practices
-
-**Create projects programmatically** when launching an initiative to ensure consistent structure and field configuration. Use `create-project` with an optional first issue to initialize tracking.
-
-**Use descriptive project names** that clearly indicate purpose and scope. Prefer "Performance Optimization Q1 2026" over "Project 1".
-
-**Prefer Projects fields over ad-hoc labels** for grouping related work across issues and PRs.
-
-**Set meaningful field values** like status, priority, and effort to enable effective filtering and sorting on boards.
-
-**Create custom views automatically** using the `views` configuration in frontmatter for consistent board setup.
-
-**Post regular status updates** using `create-project-status-update` to keep stakeholders informed of progress and health.
-
-**Combine with issue creation** for initiative workflows that generate multiple tracked tasks automatically.
-
-**Update status progressively** as work moves through stages (Todo → In Progress → In Review → Done).
-
-**Archive completed initiatives** rather than deleting them to preserve historical context and learnings.
-
 ## Common Challenges
 
 **Permission Errors**: Project operations require `projects: write` permission via a PAT. Default `GITHUB_TOKEN` lacks Projects v2 access.
 
 **Field Name Mismatches**: Custom field names are case-sensitive. Use exact field names as defined in project settings. Field names are automatically normalized (e.g., `story_points` matches `Story Points`).
 
-**Token Scope**: Default `GITHUB_TOKEN` cannot access Projects. Store a PAT with Projects permissions in `GH_AW_PROJECT_GITHUB_TOKEN` secret.
+**Token Scope**: Default `GITHUB_TOKEN` cannot access Projects. Store a PAT with Projects permissions in [`GH_AW_PROJECT_GITHUB_TOKEN`](/gh-aw/reference/auth/#gh_aw_project_github_token) secret.
 
 **Project URL Format**: Use full project URLs (e.g., `https://github.com/orgs/myorg/projects/42`), not project numbers alone.
 

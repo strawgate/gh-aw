@@ -125,7 +125,6 @@ func TestEngineStepSerialization(t *testing.T) {
 	}{
 		{"Claude", NewClaudeEngine()},
 		{"Codex", NewCodexEngine()},
-		{"Custom", NewCustomEngine()},
 	}
 
 	stepMap := map[string]any{
@@ -168,16 +167,6 @@ console.log(multiline);`,
 					t.Errorf("Codex engine output should contain 'script:', got:\n%s", result)
 				}
 				t.Logf("Codex engine output:\n%s", result)
-
-			case *CustomEngine:
-				result, err := engine.convertStepToYAML(stepMap)
-				if err != nil {
-					t.Fatalf("Custom engine convertStepToYAML failed: %v", err)
-				}
-				if !strings.Contains(result, "script:") {
-					t.Errorf("Custom engine output should contain 'script:', got:\n%s", result)
-				}
-				t.Logf("Custom engine output:\n%s", result)
 			}
 		})
 	}

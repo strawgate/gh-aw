@@ -3,399 +3,492 @@
 package workflow
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/github/gh-aw/pkg/constants"
-	"github.com/github/gh-aw/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateImportedStepsNoAgenticSecrets_Copilot(t *testing.T) {
-	tmpDir := testutil.TempDir(t, "test-*")
-	workflowsDir := filepath.Join(tmpDir, constants.GetWorkflowDir())
-	require.NoError(t, os.MkdirAll(workflowsDir, 0755), "Failed to create workflows directory")
+// TestCheckoutMissingPersistCredentialsFalse tests the checkoutMissingPersistCredentialsFalse helper
+func TestCheckoutMissingPersistCredentialsFalse(t *testing.T) {
+	tests := []struct {
+		name     string
+		step     map[string]any
+		expected bool // true = insecure (missing persist-credentials: false)
+	}{
+		{
+			name: "non-checkout step is safe",
+			step: map[string]any{
+				"name": "Run tests",
+				"run":  "go test ./...",
+			},
+			expected: false,
+		},
+		{
+			name: "checkout without with block is insecure",
+			step: map[string]any{
+				"uses": "actions/checkout@v4",
+			},
+			expected: true,
+		},
+		{
+			name: "checkout with persist-credentials false is safe",
+			step: map[string]any{
+				"uses": "actions/checkout@v4",
+				"with": map[string]any{
+					"persist-credentials": false,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "checkout with persist-credentials true is insecure",
+			step: map[string]any{
+				"uses": "actions/checkout@v4",
+				"with": map[string]any{
+					"persist-credentials": true,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "checkout with persist-credentials string false is safe",
+			step: map[string]any{
+				"uses": "actions/checkout@v4",
+				"with": map[string]any{
+					"persist-credentials": "false",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "checkout with persist-credentials string true is insecure",
+			step: map[string]any{
+				"uses": "actions/checkout@v4",
+				"with": map[string]any{
+					"persist-credentials": "true",
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "checkout without persist-credentials key in with block is insecure",
+			step: map[string]any{
+				"uses": "actions/checkout@v4",
+				"with": map[string]any{
+					"fetch-depth": 1,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "checkout without version tag is insecure",
+			step: map[string]any{
+				"uses": "actions/checkout",
+				"with": map[string]any{
+					"fetch-depth": 0,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "checkout without version tag with persist-credentials false is safe",
+			step: map[string]any{
+				"uses": "actions/checkout",
+				"with": map[string]any{
+					"persist-credentials": false,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "step with no uses key is safe",
+			step: map[string]any{
+				"name": "Print message",
+				"run":  "echo hello",
+			},
+			expected: false,
+		},
+		{
+			name: "checkout with SHA pin and persist-credentials false is safe",
+			step: map[string]any{
+				"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+				"with": map[string]any{
+					"persist-credentials": false,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "checkout with SHA pin without persist-credentials is insecure",
+			step: map[string]any{
+				"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+			},
+			expected: true,
+		},
+		{
+			name: "different action starting with actions/checkout prefix but not checkout itself",
+			step: map[string]any{
+				"uses": "actions/checkout-extra@v1",
+			},
+			expected: false,
+		},
+	}
 
-	// Create an import file with custom engine using COPILOT_GITHUB_TOKEN
-	importContent := `---
-engine:
-  id: custom
-  steps:
-    - name: Call Copilot CLI
-      run: |
-        gh copilot suggest "How do I use Git?"
-      env:
-        GH_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
----
-
-# Shared Custom Engine
-This shared config uses Copilot CLI with the agentic secret.
-`
-	importFile := filepath.Join(workflowsDir, "shared", "copilot-custom-engine.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(importFile), 0755))
-	require.NoError(t, os.WriteFile(importFile, []byte(importContent), 0644))
-
-	// Create main workflow that imports this
-	mainContent := `---
-name: Test Workflow
-on: push
-imports:
-  - shared/copilot-custom-engine.md
----
-
-# Test Workflow
-This workflow imports a custom engine with agentic secrets.
-`
-	mainFile := filepath.Join(workflowsDir, "test-copilot-secret.md")
-	require.NoError(t, os.WriteFile(mainFile, []byte(mainContent), 0644))
-
-	// Test in strict mode - should fail
-	t.Run("strict mode error", func(t *testing.T) {
-		compiler := NewCompiler()
-		compiler.SetStrictMode(true)
-		err := compiler.CompileWorkflow(mainFile)
-
-		require.Error(t, err, "Expected error in strict mode")
-		if err != nil {
-			errMsg := err.Error()
-			assert.Contains(t, errMsg, "strict mode", "Error should mention strict mode")
-			assert.Contains(t, errMsg, "COPILOT_GITHUB_TOKEN", "Error should mention the secret name")
-			// Check for either Copilot CLI or Copilot SDK (both use COPILOT_GITHUB_TOKEN)
-			hasCopilotCLI := strings.Contains(errMsg, "GitHub Copilot CLI")
-			hasCopilotSDK := strings.Contains(errMsg, "GitHub Copilot SDK")
-			assert.True(t, hasCopilotCLI || hasCopilotSDK, "Error should mention the engine (GitHub Copilot CLI or GitHub Copilot SDK)")
-			assert.Contains(t, errMsg, "custom engine steps", "Error should mention custom engine steps")
-		}
-	})
-
-	// Test in non-strict mode - should succeed with warning
-	t.Run("non-strict mode warning", func(t *testing.T) {
-		// Update main file to explicitly disable strict mode
-		mainContentNonStrict := `---
-name: Test Workflow
-on: push
-strict: false
-imports:
-  - shared/copilot-custom-engine.md
----
-
-# Test Workflow
-This workflow imports a custom engine with agentic secrets.
-`
-		mainFileNonStrict := filepath.Join(workflowsDir, "test-copilot-secret-nonstrict.md")
-		require.NoError(t, os.WriteFile(mainFileNonStrict, []byte(mainContentNonStrict), 0644))
-
-		compiler := NewCompiler()
-		err := compiler.CompileWorkflow(mainFileNonStrict)
-
-		require.NoError(t, err, "Should not error in non-strict mode")
-		assert.Positive(t, compiler.GetWarningCount(), "Should have warnings")
-	})
-}
-
-func TestValidateImportedStepsNoAgenticSecrets_Anthropic(t *testing.T) {
-	tmpDir := testutil.TempDir(t, "test-*")
-	workflowsDir := filepath.Join(tmpDir, constants.GetWorkflowDir())
-	require.NoError(t, os.MkdirAll(workflowsDir, 0755))
-
-	// Create an import file with custom engine using ANTHROPIC_API_KEY
-	importContent := `---
-engine:
-  id: custom
-  steps:
-    - name: Use Claude API
-      uses: actions/claude-action@v1
-      with:
-        api-key: ${{ secrets.ANTHROPIC_API_KEY }}
----
-
-# Shared Custom Engine
-`
-	importFile := filepath.Join(workflowsDir, "shared", "claude-custom-engine.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(importFile), 0755))
-	require.NoError(t, os.WriteFile(importFile, []byte(importContent), 0644))
-
-	// Create main workflow
-	mainContent := `---
-name: Test Workflow
-on: push
-imports:
-  - shared/claude-custom-engine.md
----
-
-# Test
-`
-	mainFile := filepath.Join(workflowsDir, "test-anthropic-secret.md")
-	require.NoError(t, os.WriteFile(mainFile, []byte(mainContent), 0644))
-
-	// Test in strict mode
-	compiler := NewCompiler()
-	compiler.SetStrictMode(true)
-	err := compiler.CompileWorkflow(mainFile)
-
-	require.Error(t, err, "Expected error in strict mode")
-	if err != nil {
-		assert.Contains(t, err.Error(), "ANTHROPIC_API_KEY")
-		assert.Contains(t, err.Error(), "Claude Code")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := checkoutMissingPersistCredentialsFalse(tt.step)
+			assert.Equal(t, tt.expected, result, "checkoutMissingPersistCredentialsFalse returned unexpected result")
+		})
 	}
 }
 
-func TestValidateImportedStepsNoAgenticSecrets_Codex(t *testing.T) {
-	tmpDir := testutil.TempDir(t, "test-*")
-	workflowsDir := filepath.Join(tmpDir, constants.GetWorkflowDir())
-	require.NoError(t, os.MkdirAll(workflowsDir, 0755))
+// TestValidateCheckoutPersistCredentials_FrontmatterSteps tests the main frontmatter steps validation
+func TestValidateCheckoutPersistCredentials_FrontmatterSteps(t *testing.T) {
+	tests := []struct {
+		name        string
+		frontmatter map[string]any
+		mergedSteps string
+		strictMode  bool
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "no steps section - no error",
+			frontmatter: map[string]any{
+				"on": "push",
+			},
+			strictMode:  true,
+			expectError: false,
+		},
+		{
+			name: "empty steps - no error",
+			frontmatter: map[string]any{
+				"on":    "push",
+				"steps": []any{},
+			},
+			strictMode:  true,
+			expectError: false,
+		},
+		{
+			name: "checkout with persist-credentials false - no error",
+			frontmatter: map[string]any{
+				"steps": []any{
+					map[string]any{
+						"name": "Checkout",
+						"uses": "actions/checkout@v4",
+						"with": map[string]any{
+							"persist-credentials": false,
+						},
+					},
+				},
+			},
+			strictMode:  true,
+			expectError: false,
+		},
+		{
+			name: "checkout without persist-credentials false in strict mode - error",
+			frontmatter: map[string]any{
+				"steps": []any{
+					map[string]any{
+						"name": "Checkout",
+						"uses": "actions/checkout@v4",
+					},
+				},
+			},
+			strictMode:  true,
+			expectError: true,
+			errorMsg:    "strict mode: actions/checkout step(s) without 'persist-credentials: false'",
+		},
+		{
+			name: "checkout without persist-credentials false in non-strict mode - warning only",
+			frontmatter: map[string]any{
+				"steps": []any{
+					map[string]any{
+						"name": "Checkout",
+						"uses": "actions/checkout@v4",
+					},
+				},
+			},
+			strictMode:  false,
+			expectError: false, // warning only in non-strict mode
+		},
+		{
+			name: "non-checkout step - no error",
+			frontmatter: map[string]any{
+				"steps": []any{
+					map[string]any{
+						"name": "Run tests",
+						"run":  "go test ./...",
+					},
+				},
+			},
+			strictMode:  true,
+			expectError: false,
+		},
+		{
+			name: "error includes step name",
+			frontmatter: map[string]any{
+				"steps": []any{
+					map[string]any{
+						"name": "My Checkout Step",
+						"uses": "actions/checkout@v4",
+					},
+				},
+			},
+			strictMode:  true,
+			expectError: true,
+			errorMsg:    "'My Checkout Step'",
+		},
+	}
 
-	// Create an import file with custom engine using both CODEX_API_KEY and OPENAI_API_KEY
-	importContent := `---
-engine:
-  id: custom
-  steps:
-    - name: Use OpenAI API
-      run: |
-        curl -X POST https://api.openai.com/v1/completions \
-          -H "Authorization: Bearer $OPENAI_API_KEY"
-      env:
-        OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
----
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			compiler := NewCompiler()
+			compiler.strictMode = tt.strictMode
 
-# Shared Custom Engine
-`
-	importFile := filepath.Join(workflowsDir, "shared", "codex-custom-engine.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(importFile), 0755))
-	require.NoError(t, os.WriteFile(importFile, []byte(importContent), 0644))
+			err := compiler.validateCheckoutPersistCredentials(tt.frontmatter, tt.mergedSteps)
 
-	// Create main workflow
-	mainContent := `---
-name: Test Workflow
-on: push
-imports:
-  - shared/codex-custom-engine.md
----
-
-# Test
-`
-	mainFile := filepath.Join(workflowsDir, "test-codex-secret.md")
-	require.NoError(t, os.WriteFile(mainFile, []byte(mainContent), 0644))
-
-	// Test in strict mode
-	compiler := NewCompiler()
-	compiler.SetStrictMode(true)
-	err := compiler.CompileWorkflow(mainFile)
-
-	require.Error(t, err, "Expected error in strict mode")
-	if err != nil {
-		errMsg := err.Error()
-		// Should detect both secrets
-		hasCodex := strings.Contains(errMsg, "CODEX_API_KEY")
-		hasOpenAI := strings.Contains(errMsg, "OPENAI_API_KEY")
-		assert.True(t, hasCodex || hasOpenAI, "Should mention at least one of the Codex secrets")
-		assert.Contains(t, errMsg, "Codex")
+			if tt.expectError {
+				require.Error(t, err, "Expected an error but got none")
+				assert.Contains(t, err.Error(), tt.errorMsg, "Error message mismatch")
+			} else {
+				assert.NoError(t, err, "Expected no error but got: %v", err)
+			}
+		})
 	}
 }
 
-func TestValidateImportedStepsNoAgenticSecrets_SafeSecrets(t *testing.T) {
-	tmpDir := testutil.TempDir(t, "test-*")
-	workflowsDir := filepath.Join(tmpDir, constants.GetWorkflowDir())
-	require.NoError(t, os.MkdirAll(workflowsDir, 0755))
+// TestValidateCheckoutPersistCredentials_MergedSteps tests imported (merged) steps validation
+func TestValidateCheckoutPersistCredentials_MergedSteps(t *testing.T) {
+	tests := []struct {
+		name        string
+		mergedSteps string
+		strictMode  bool
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "empty merged steps - no error",
+			mergedSteps: "",
+			strictMode:  true,
+			expectError: false,
+		},
+		{
+			name: "imported checkout with persist-credentials false - no error",
+			mergedSteps: `- name: Checkout
+  uses: actions/checkout@v4
+  with:
+    persist-credentials: false
+`,
+			strictMode:  true,
+			expectError: false,
+		},
+		{
+			name: "imported checkout without persist-credentials in strict mode - error",
+			mergedSteps: `- name: Imported Checkout
+  uses: actions/checkout@v4
+`,
+			strictMode:  true,
+			expectError: true,
+			errorMsg:    "strict mode: actions/checkout step(s) without 'persist-credentials: false'",
+		},
+		{
+			name: "imported checkout without persist-credentials in non-strict mode - warning only",
+			mergedSteps: `- name: Imported Checkout
+  uses: actions/checkout@v4
+`,
+			strictMode:  false,
+			expectError: false,
+		},
+		{
+			name: "imported non-checkout step - no error",
+			mergedSteps: `- name: Setup node
+  uses: actions/setup-node@v4
+  with:
+    node-version: '20'
+`,
+			strictMode:  true,
+			expectError: false,
+		},
+		{
+			name: "error message includes imported step name",
+			mergedSteps: `- name: My Imported Checkout
+  uses: actions/checkout@v4
+`,
+			strictMode:  true,
+			expectError: true,
+			errorMsg:    "'My Imported Checkout'",
+		},
+	}
 
-	// Create an import file with custom engine using non-agentic secrets (should be fine)
-	importContent := `---
-engine:
-  id: custom
-  steps:
-    - name: Use Custom API
-      run: |
-        curl -X POST https://api.example.com/v1/data \
-          -H "Authorization: Bearer $MY_CUSTOM_TOKEN"
-      env:
-        MY_CUSTOM_TOKEN: ${{ secrets.MY_CUSTOM_API_KEY }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
----
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			compiler := NewCompiler()
+			compiler.strictMode = tt.strictMode
 
-# Shared Custom Engine
-This uses safe, non-agentic secrets.
-`
-	importFile := filepath.Join(workflowsDir, "shared", "safe-custom-engine.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(importFile), 0755))
-	require.NoError(t, os.WriteFile(importFile, []byte(importContent), 0644))
+			err := compiler.validateCheckoutPersistCredentials(map[string]any{}, tt.mergedSteps)
 
-	// Create main workflow
-	mainContent := `---
-name: Test Workflow
-on: push
-strict: false
-permissions:
-  contents: read
-  issues: read
-  pull-requests: read
-imports:
-  - shared/safe-custom-engine.md
----
-
-# Test
-`
-	mainFile := filepath.Join(workflowsDir, "test-safe-secrets.md")
-	require.NoError(t, os.WriteFile(mainFile, []byte(mainContent), 0644))
-
-	// Test in strict mode - should succeed
-	compiler := NewCompiler()
-	compiler.SetStrictMode(true)
-	err := compiler.CompileWorkflow(mainFile)
-
-	assert.NoError(t, err, "Should not error when using safe secrets")
-	// Note: We may have warning for experimental feature (custom engine), but not for our secret validation
-}
-
-func TestValidateImportedStepsNoAgenticSecrets_NonCustomEngine(t *testing.T) {
-	tmpDir := testutil.TempDir(t, "test-*")
-	workflowsDir := filepath.Join(tmpDir, constants.GetWorkflowDir())
-	require.NoError(t, os.MkdirAll(workflowsDir, 0755))
-
-	// Create workflow with non-custom engine (copilot) - should not validate
-	mainContent := `---
-name: Test Workflow
-on: push
-engine: copilot
-strict: false
-permissions:
-  contents: read
-  issues: read
-  pull-requests: read
----
-
-# Test
-This uses the standard copilot engine, not custom.
-`
-	mainFile := filepath.Join(workflowsDir, "test-copilot-engine.md")
-	require.NoError(t, os.WriteFile(mainFile, []byte(mainContent), 0644))
-
-	// Test in strict mode - should succeed (validation doesn't apply)
-	compiler := NewCompiler()
-	compiler.SetStrictMode(true)
-	err := compiler.CompileWorkflow(mainFile)
-
-	assert.NoError(t, err, "Should not error for non-custom engines")
-}
-
-func TestValidateImportedStepsNoAgenticSecrets_MultipleSecrets(t *testing.T) {
-	tmpDir := testutil.TempDir(t, "test-*")
-	workflowsDir := filepath.Join(tmpDir, constants.GetWorkflowDir())
-	require.NoError(t, os.MkdirAll(workflowsDir, 0755))
-
-	// Create an import file with custom engine using multiple agentic secrets
-	importContent := `---
-engine:
-  id: custom
-  steps:
-    - name: Use Multiple AI APIs
-      run: |
-        echo "Using Copilot"
-        gh copilot suggest "help"
-      env:
-        GH_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-    - name: Use Claude
-      run: |
-        echo "Using Claude"
-      env:
-        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
----
-
-# Shared Custom Engine
-`
-	importFile := filepath.Join(workflowsDir, "shared", "multi-secret-engine.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(importFile), 0755))
-	require.NoError(t, os.WriteFile(importFile, []byte(importContent), 0644))
-
-	// Create main workflow
-	mainContent := `---
-name: Test Workflow
-on: push
-imports:
-  - shared/multi-secret-engine.md
----
-
-# Test
-`
-	mainFile := filepath.Join(workflowsDir, "test-multi-secrets.md")
-	require.NoError(t, os.WriteFile(mainFile, []byte(mainContent), 0644))
-
-	// Test in strict mode
-	compiler := NewCompiler()
-	compiler.SetStrictMode(true)
-	err := compiler.CompileWorkflow(mainFile)
-
-	require.Error(t, err, "Expected error in strict mode")
-	if err != nil {
-		errMsg := err.Error()
-		// Should mention both secrets
-		assert.Contains(t, errMsg, "COPILOT_GITHUB_TOKEN")
-		assert.Contains(t, errMsg, "ANTHROPIC_API_KEY")
-		// Should mention the engines (GitHub Copilot CLI/SDK and/or Claude Code)
-		hasCopilotCLI := strings.Contains(errMsg, "GitHub Copilot CLI")
-		hasCopilotSDK := strings.Contains(errMsg, "GitHub Copilot SDK")
-		hasClaude := strings.Contains(errMsg, "Claude Code")
-		assert.True(t, hasCopilotCLI || hasCopilotSDK || hasClaude, "Should mention the engines")
+			if tt.expectError {
+				require.Error(t, err, "Expected an error but got none")
+				assert.Contains(t, err.Error(), tt.errorMsg, "Error message mismatch")
+			} else {
+				assert.NoError(t, err, "Expected no error but got: %v", err)
+			}
+		})
 	}
 }
 
-func TestValidateImportedStepsNoAgenticSecrets_OpenCodeExemption(t *testing.T) {
-	tmpDir := testutil.TempDir(t, "test-*")
-	workflowsDir := filepath.Join(tmpDir, constants.GetWorkflowDir())
-	require.NoError(t, os.MkdirAll(workflowsDir, 0755))
-
-	// Create an import file with OpenCode custom engine using agentic secrets
-	importContent := `---
-engine:
-  id: custom
-  env:
-    GH_AW_AGENT_VERSION: "0.15.13"
-  steps:
-    - name: Install OpenCode
-      run: |
-        npm install -g "opencode-ai@${GH_AW_AGENT_VERSION}"
-      env:
-        GH_AW_AGENT_VERSION: ${{ env.GH_AW_AGENT_VERSION }}
-    - name: Run OpenCode
-      run: |
-        opencode run "test prompt"
-      env:
-        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
----
-
-# OpenCode Engine
-This is a custom agentic engine wrapper.
-`
-	importFile := filepath.Join(workflowsDir, "shared", "opencode.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(importFile), 0755))
-	require.NoError(t, os.WriteFile(importFile, []byte(importContent), 0644))
-
-	// Create main workflow with strict mode
-	mainContent := `---
-name: Test OpenCode Workflow
-on: push
-strict: true
-permissions:
-  contents: read
-  issues: read
-  pull-requests: read
-imports:
-  - shared/opencode.md
----
-
-# Test
-This workflow uses OpenCode which is a custom agentic engine.
-`
-	mainFile := filepath.Join(workflowsDir, "test-opencode.md")
-	require.NoError(t, os.WriteFile(mainFile, []byte(mainContent), 0644))
-
-	// Test in strict mode - should succeed because OpenCode is exempt
+// TestValidateCheckoutPersistCredentials_WarningEmitted tests that a warning is emitted in non-strict mode
+func TestValidateCheckoutPersistCredentials_WarningEmitted(t *testing.T) {
 	compiler := NewCompiler()
-	compiler.SetStrictMode(true)
-	err := compiler.CompileWorkflow(mainFile)
+	compiler.strictMode = false
 
-	assert.NoError(t, err, "Should not error for OpenCode custom engine even in strict mode")
+	frontmatter := map[string]any{
+		"steps": []any{
+			map[string]any{
+				"name": "Checkout",
+				"uses": "actions/checkout@v4",
+			},
+		},
+	}
+
+	initialWarnings := compiler.GetWarningCount()
+	err := compiler.validateCheckoutPersistCredentials(frontmatter, "")
+	require.NoError(t, err, "Should not return an error in non-strict mode")
+	assert.Greater(t, compiler.GetWarningCount(), initialWarnings, "Warning count should be incremented")
+}
+
+// TestValidateCheckoutPersistCredentials_BothSourcesChecked tests that both frontmatter and
+// imported steps are checked together
+func TestValidateCheckoutPersistCredentials_BothSourcesChecked(t *testing.T) {
+	compiler := NewCompiler()
+	compiler.strictMode = true
+
+	// Main frontmatter has safe checkout
+	frontmatter := map[string]any{
+		"steps": []any{
+			map[string]any{
+				"name": "Safe Checkout",
+				"uses": "actions/checkout@v4",
+				"with": map[string]any{
+					"persist-credentials": false,
+				},
+			},
+		},
+	}
+
+	// Imported steps have insecure checkout
+	mergedSteps := `- name: Insecure Imported Checkout
+  uses: actions/checkout@v4
+`
+
+	err := compiler.validateCheckoutPersistCredentials(frontmatter, mergedSteps)
+	require.Error(t, err, "Should error when imported step has insecure checkout")
+	assert.Contains(t, err.Error(), "'Insecure Imported Checkout'", "Error should reference the insecure imported step")
+	assert.NotContains(t, err.Error(), "'Safe Checkout'", "Error should not reference the safe step")
+}
+
+// TestValidateCheckoutPersistCredentials_MultipleOffenders tests reporting multiple insecure steps
+func TestValidateCheckoutPersistCredentials_MultipleOffenders(t *testing.T) {
+	compiler := NewCompiler()
+	compiler.strictMode = true
+
+	frontmatter := map[string]any{
+		"steps": []any{
+			map[string]any{
+				"name": "First Checkout",
+				"uses": "actions/checkout@v4",
+			},
+			map[string]any{
+				"name": "Second Checkout",
+				"uses": "actions/checkout@v4",
+			},
+		},
+	}
+
+	err := compiler.validateCheckoutPersistCredentials(frontmatter, "")
+	require.Error(t, err, "Should error when multiple steps have insecure checkout")
+	assert.Contains(t, err.Error(), "'First Checkout'", "Error should mention first step")
+	assert.Contains(t, err.Error(), "'Second Checkout'", "Error should mention second step")
+}
+
+// TestStepDisplayName tests the stepDisplayName helper function
+func TestStepDisplayName(t *testing.T) {
+	tests := []struct {
+		name     string
+		step     map[string]any
+		expected string
+	}{
+		{
+			name:     "step with name",
+			step:     map[string]any{"name": "Checkout", "uses": "actions/checkout@v4"},
+			expected: "'Checkout'",
+		},
+		{
+			name:     "step without name but with uses",
+			step:     map[string]any{"uses": "actions/checkout@v4"},
+			expected: "'actions/checkout@v4'",
+		},
+		{
+			name:     "step without name or uses",
+			step:     map[string]any{"run": "echo hello"},
+			expected: "'<unnamed step>'",
+		},
+		{
+			name:     "step with empty name falls back to uses",
+			step:     map[string]any{"name": "", "uses": "actions/checkout@v4"},
+			expected: "'actions/checkout@v4'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := stepDisplayName(tt.step)
+			assert.Equal(t, tt.expected, result, "stepDisplayName returned unexpected value")
+		})
+	}
+}
+
+// TestCheckoutMissingPersistCredentialsFalse_ActionPin tests that action pin comments are handled
+func TestCheckoutMissingPersistCredentialsFalse_ActionPin(t *testing.T) {
+	// Action pin with SHA and comment should still be recognized as checkout
+	step := map[string]any{
+		"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2",
+	}
+	result := checkoutMissingPersistCredentialsFalse(step)
+	assert.True(t, result, "Checkout with action pin comment but no persist-credentials should be flagged")
+
+	// Action pin with SHA, comment, and persist-credentials: false should be safe
+	stepSafe := map[string]any{
+		"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2",
+		"with": map[string]any{
+			"persist-credentials": false,
+		},
+	}
+	resultSafe := checkoutMissingPersistCredentialsFalse(stepSafe)
+	assert.False(t, resultSafe, "Checkout with action pin comment and persist-credentials: false should be safe")
+}
+
+// TestValidateCheckoutPersistCredentials_GitLeakErrorMessage validates the error mentions token leak
+func TestValidateCheckoutPersistCredentials_GitLeakErrorMessage(t *testing.T) {
+	compiler := NewCompiler()
+	compiler.strictMode = true
+
+	frontmatter := map[string]any{
+		"steps": []any{
+			map[string]any{
+				"uses": "actions/checkout@v4",
+			},
+		},
+	}
+
+	err := compiler.validateCheckoutPersistCredentials(frontmatter, "")
+	require.Error(t, err)
+	assert.True(t,
+		strings.Contains(err.Error(), "git token") || strings.Contains(err.Error(), ".git/config"),
+		"Error should mention git token leak",
+	)
+	assert.Contains(t, err.Error(), "persist-credentials: false", "Error should mention the fix")
 }

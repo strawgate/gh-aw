@@ -6,36 +6,36 @@ sidebar:
 disable-agentic-editing: true
 ---
 
-The `sandbox` field configures sandbox environments for AI engines, providing two main capabilities:
+The `sandbox` field configures sandbox environments for AI engines (coding agents), providing two main capabilities:
 
-1. **Agent Sandbox** - Controls the agent runtime security using AWF (Agent Workflow Firewall)
+1. **Coding Agent Sandbox** - Controls the agent runtime security using AWF (Agent Workflow Firewall)
 2. **Model Context Protocol (MCP) Gateway** - Routes MCP server calls through a unified HTTP gateway
 
 ## Configuration
 
-### Agent Sandbox
+### Coding Agent Sandbox
 
-Configure the agent sandbox type to control how the AI engine is isolated:
+Configure the coding agent sandbox type to control how the AI engine is isolated:
 
 ```yaml wrap
 # Use AWF (Agent Workflow Firewall) - default
 sandbox:
   agent: awf
 
-# Disable agent sandbox (firewall only) - use with caution
+# Disable coding agent sandbox (firewall only) - use with caution
 sandbox:
   agent: false
 
 # Or omit sandbox entirely to use the default (awf)
 ```
 
-> [!NOTE]
-> Default Behavior
-> If `sandbox` is not specified in your workflow, it defaults to `sandbox.agent: awf`. The agent sandbox is recommended for all workflows.
+**Default Behavior**
 
-> [!CAUTION]
-> Disabling Agent Sandbox
-> Setting `sandbox.agent: false` disables only the agent firewall while keeping the MCP gateway enabled. This reduces security isolation and should only be used when necessary. The MCP gateway cannot be disabled and remains active in all workflows.
+If `sandbox` is not specified in your workflow, it defaults to `sandbox.agent: awf`. The coding agent sandbox is recommended for all workflows.
+
+**Disabling Coding Agent Sandbox**
+
+Setting `sandbox.agent: false` disables only the agent firewall while keeping the MCP gateway enabled. This reduces security isolation and should only be used when necessary. The MCP gateway cannot be disabled and remains active in all workflows.
 
 ### MCP Gateway (Experimental)
 
@@ -53,7 +53,7 @@ sandbox:
 
 ### Combined Configuration
 
-Use both agent sandbox and MCP gateway together:
+Use both coding agent sandbox and MCP gateway together:
 
 ```yaml wrap
 features:
@@ -65,11 +65,11 @@ sandbox:
     port: 8080
 ```
 
-## Agent Sandbox Types
+## Coding Agent Sandbox Types
 
 ### AWF (Agent Workflow Firewall)
 
-AWF is the default agent sandbox that provides network egress control through domain-based access controls. Network permissions are configured through the top-level [`network`](/gh-aw/reference/network/) field.
+AWF is the default coding agent sandbox that provides network egress control through domain-based access controls. Network permissions are configured through the top-level [`network`](/gh-aw/reference/network/) field.
 
 ```yaml wrap
 sandbox:
@@ -83,24 +83,9 @@ network:
     - "api.example.com"
 ```
 
-#### Chroot Mode
-
-AWF v0.15.0+ uses **chroot mode by default** to provide transparent host filesystem access while maintaining network isolation via iptables. This eliminates explicit volume mounts and environment variable configuration.
-
-```text
-┌─────────────────────────────────────────────┐
-│  AWF Container (chroot)                     │
-│  • Full filesystem visibility               │
-│  • All host binaries available              │
-│  • Network: RESTRICTED via iptables/Squid   │
-└─────────────────────┬───────────────────────┘
-                      ▼
-              Allowed domains only
-```
-
 #### Filesystem Access
 
-AWF chroot mode makes the host filesystem visible inside the container with appropriate permissions:
+AWF makes the host filesystem visible inside the container with appropriate permissions:
 
 | Path Type | Mode | Examples |
 |-----------|------|----------|
@@ -176,11 +161,13 @@ sandbox:
 ```
 
 Mount syntax follows Docker's format: `source:destination:mode`
+
 - `source`: Path on the host system
 - `destination`: Path inside the container
 - `mode`: Either `ro` (read-only) or `rw` (read-write)
 
 Custom mounts are useful for:
+
 - Providing access to datasets or configuration files
 - Making custom tools available in the container
 - Sharing cache directories between host and container
@@ -194,30 +181,6 @@ Custom mounts are useful for:
 | `mounts` | `string[]` | Container mounts using syntax `source:destination:mode` |
 
 When `command` is specified, the standard AWF installation is skipped and your custom command is used instead.
-
-## Deprecated: Sandbox Runtime (SRT)
-
-> [!CAUTION]
-> Removed
-> Sandbox Runtime (SRT) support has been removed. AWF is now the only supported sandbox implementation.
-
-### Migration
-
-Legacy workflows using `sandbox.agent: srt` or `sandbox: sandbox-runtime` are automatically migrated to AWF during workflow parsing. No manual changes are required.
-
-**Before (automatically migrated):**
-```yaml wrap
-sandbox:
-  agent: srt
-```
-
-**After (transparent conversion):**
-```yaml wrap
-sandbox:
-  agent: awf
-```
-
-If your workflow previously used SRT, it will now use AWF with the same network permissions configured in the `network` field. AWF provides network egress control while maintaining compatibility with existing workflow configurations.
 
 ## MCP Gateway
 
@@ -236,16 +199,15 @@ The MCP Gateway routes all MCP server calls through a unified HTTP gateway, enab
 | `entrypointArgs` | `string[]` | No | Container entrypoint arguments (only valid with `container`) |
 | `env` | `object` | No | Environment variables for the gateway |
 
-> [!NOTE]
-> Execution Modes
-> The MCP gateway supports two execution modes:
-> 1. **Custom command** - Use `command` field to specify a custom binary or script
-> 2. **Container** - Use `container` field for Docker-based execution
->
-> The `command` and `container` fields are mutually exclusive - only one can be specified.
-> You must specify either `command` or `container` to use the MCP gateway feature.
+**Execution Modes**
 
-### How It Works
+The MCP gateway supports two execution modes:
+
+1. **Custom command** - Use `command` field to specify a custom binary or script
+2. **Container** - Use `container` field for Docker-based execution
+
+The `command` and `container` fields are mutually exclusive - only one can be specified.
+You must specify either `command` or `container` to use the MCP gateway feature.
 
 When MCP gateway is configured:
 
@@ -284,31 +246,6 @@ sandbox:
       LOG_LEVEL: "info"
 ```
 
-## Legacy Format
-
-For backward compatibility, legacy formats are still supported:
-
-```yaml wrap
-# Legacy string format - automatically migrated to AWF
-sandbox: sandbox-runtime
-
-# Legacy object format with 'type' field (deprecated)
-sandbox:
-  agent:
-    type: awf
-
-# Recommended format with 'id' field
-sandbox:
-  agent:
-    id: awf
-```
-
-The `id` field replaces the legacy `type` field in the object format. When both are present, `id` takes precedence.
-
-> [!NOTE]
-> SRT Migration
-> The legacy string format `sandbox: sandbox-runtime` is automatically converted to `sandbox.agent: awf` during workflow parsing.
-
 ## Feature Flags
 
 Some sandbox features require feature flags:
@@ -323,10 +260,6 @@ Enable feature flags in your workflow:
 features:
   mcp-gateway: true
 ```
-
-> [!NOTE]
-> Removed Feature Flags
-> The `sandbox-runtime` feature flag has been removed. It is no longer recognized and will be ignored if present in workflow configurations.
 
 ## Related Documentation
 

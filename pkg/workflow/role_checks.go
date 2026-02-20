@@ -89,66 +89,96 @@ func (c *Compiler) generateRateLimitCheck(data *WorkflowData, steps []string) []
 
 // extractRoles extracts the 'roles' field from frontmatter to determine permission requirements
 func (c *Compiler) extractRoles(frontmatter map[string]any) []string {
-	if rolesValue, exists := frontmatter["roles"]; exists {
-		switch v := rolesValue.(type) {
-		case string:
-			if v == "all" {
-				// Special case: "all" means no restrictions
-				roleLog.Print("Roles set to 'all' - no permission restrictions")
-				return []string{"all"}
-			}
-			// Single permission level as string
-			roleLog.Printf("Extracted single role: %s", v)
-			return []string{v}
-		case []any:
-			// Array of permission levels
-			var permissions []string
-			for _, item := range v {
-				if str, ok := item.(string); ok {
-					permissions = append(permissions, str)
+	// Check on.roles
+	if onValue, exists := frontmatter["on"]; exists {
+		if onMap, ok := onValue.(map[string]any); ok {
+			if rolesValue, hasRoles := onMap["roles"]; hasRoles {
+				roles := parseRolesValue(rolesValue, "on.roles")
+				if roles != nil {
+					return roles
 				}
 			}
-			roleLog.Printf("Extracted %d roles from array: %v", len(permissions), permissions)
-			return permissions
-		case []string:
-			// Already a string slice
-			roleLog.Printf("Extracted %d roles: %v", len(v), v)
-			return v
 		}
 	}
+
 	// Default: require admin, maintainer, or write permissions
 	defaultRoles := []string{"admin", "maintainer", "write"}
 	roleLog.Printf("No roles specified, using defaults: %v", defaultRoles)
 	return defaultRoles
 }
 
+// parseRolesValue parses a roles value from frontmatter (supports string, []any, []string)
+func parseRolesValue(rolesValue any, fieldName string) []string {
+	switch v := rolesValue.(type) {
+	case string:
+		if v == "all" {
+			// Special case: "all" means no restrictions
+			roleLog.Printf("Roles in '%s' set to 'all' - no permission restrictions", fieldName)
+			return []string{"all"}
+		}
+		// Single permission level as string
+		roleLog.Printf("Extracted single role from '%s': %s", fieldName, v)
+		return []string{v}
+	case []any:
+		// Array of permission levels
+		var permissions []string
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				permissions = append(permissions, str)
+			}
+		}
+		roleLog.Printf("Extracted %d roles from '%s' array: %v", len(permissions), fieldName, permissions)
+		return permissions
+	case []string:
+		// Already a string slice
+		roleLog.Printf("Extracted %d roles from '%s': %v", len(v), fieldName, v)
+		return v
+	}
+	return nil
+}
+
 // extractBots extracts the 'bots' field from frontmatter to determine allowed bot identifiers
 func (c *Compiler) extractBots(frontmatter map[string]any) []string {
-	if botsValue, exists := frontmatter["bots"]; exists {
-		switch v := botsValue.(type) {
-		case []any:
-			// Array of bot identifiers
-			var bots []string
-			for _, item := range v {
-				if str, ok := item.(string); ok {
-					bots = append(bots, str)
+	// Check on.bots
+	if onValue, exists := frontmatter["on"]; exists {
+		if onMap, ok := onValue.(map[string]any); ok {
+			if botsValue, hasBots := onMap["bots"]; hasBots {
+				bots := parseBotsValue(botsValue, "on.bots")
+				if bots != nil {
+					return bots
 				}
 			}
-			roleLog.Printf("Extracted %d bot identifiers from array: %v", len(bots), bots)
-			return bots
-		case []string:
-			// Already a string slice
-			roleLog.Printf("Extracted %d bot identifiers: %v", len(v), v)
-			return v
-		case string:
-			// Single bot identifier as string
-			roleLog.Printf("Extracted single bot identifier: %s", v)
-			return []string{v}
 		}
 	}
+
 	// No bots specified, return empty array
 	roleLog.Print("No bots specified")
 	return []string{}
+}
+
+// parseBotsValue parses a bots value from frontmatter (supports string, []any, []string)
+func parseBotsValue(botsValue any, fieldName string) []string {
+	switch v := botsValue.(type) {
+	case []any:
+		// Array of bot identifiers
+		var bots []string
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				bots = append(bots, str)
+			}
+		}
+		roleLog.Printf("Extracted %d bot identifiers from '%s' array: %v", len(bots), fieldName, bots)
+		return bots
+	case []string:
+		// Already a string slice
+		roleLog.Printf("Extracted %d bot identifiers from '%s': %v", len(v), fieldName, v)
+		return v
+	case string:
+		// Single bot identifier as string
+		roleLog.Printf("Extracted single bot identifier from '%s': %s", fieldName, v)
+		return []string{v}
+	}
+	return nil
 }
 
 // extractRateLimitConfig extracts the 'rate-limit' field from frontmatter
@@ -324,7 +354,8 @@ func (c *Compiler) hasSafeEventsOnly(data *WorkflowData, frontmatter map[string]
 			for eventName := range onMap {
 				// Skip command events as they are handled separately
 				// Skip stop-after and reaction as they are not event types
-				if eventName == "command" || eventName == "stop-after" || eventName == "reaction" {
+				// Skip roles and bots as they are configuration, not event types
+				if eventName == "command" || eventName == "stop-after" || eventName == "reaction" || eventName == "roles" || eventName == "bots" {
 					continue
 				}
 
@@ -360,6 +391,12 @@ func (c *Compiler) hasSafeEventsOnly(data *WorkflowData, frontmatter map[string]
 				eventCount--
 			}
 			if _, hasReaction := onMap["reaction"]; hasReaction {
+				eventCount--
+			}
+			if _, hasRoles := onMap["roles"]; hasRoles {
+				eventCount--
+			}
+			if _, hasBots := onMap["bots"]; hasBots {
 				eventCount--
 			}
 

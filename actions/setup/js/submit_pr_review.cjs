@@ -5,6 +5,9 @@
  * @typedef {import('./types/handler-factory').HandlerFactoryFunction} HandlerFactoryFunction
  */
 
+const { resolveTarget } = require("./safe_output_helpers.cjs");
+const { getErrorMessage } = require("./error_helpers.cjs");
+
 /** @type {string} Safe output type handled by this module */
 const HANDLER_TYPE = "submit_pull_request_review";
 
@@ -23,6 +26,7 @@ const VALID_EVENTS = new Set(["APPROVE", "REQUEST_CHANGES", "COMMENT"]);
  */
 async function main(config = {}) {
   const maxCount = config.max || 1;
+  const targetConfig = config.target || "triggering";
   const buffer = config._prReviewBuffer;
 
   if (!buffer) {
@@ -32,7 +36,7 @@ async function main(config = {}) {
     };
   }
 
-  core.info(`Submit PR review handler initialized: max=${maxCount}`);
+  core.info(`Submit PR review handler initialized: max=${maxCount}, target=${targetConfig}`);
 
   let processedCount = 0;
 
@@ -82,17 +86,58 @@ async function main(config = {}) {
 
     // Ensure review context is set for body-only reviews (no inline comments).
     // If create_pull_request_review_comment already set context, this is a no-op.
-    if (!buffer.getReviewContext() && typeof context !== "undefined" && context && context.payload) {
-      const pr = context.payload.pull_request;
-      if (pr && pr.head && pr.head.sha) {
+    // Use target config as single source of truth (same as add_comment): resolveTarget first, then use payload PR only when it matches.
+    if (!buffer.getReviewContext()) {
+      const targetResult = resolveTarget({
+        targetConfig,
+        item: message,
+        context,
+        itemType: "PR review",
+        supportsPR: false,
+        supportsIssue: false,
+      });
+
+      if (!targetResult.success) {
+        if (targetResult.shouldFail) {
+          core.warning(`Could not resolve PR for review context: ${targetResult.error}`);
+        }
+      } else if (targetResult.number) {
+        const prNum = targetResult.number;
         const repo = `${context.repo.owner}/${context.repo.repo}`;
-        buffer.setReviewContext({
-          repo,
-          repoParts: { owner: context.repo.owner, repo: context.repo.repo },
-          pullRequestNumber: pr.number,
-          pullRequest: pr,
-        });
-        core.info(`Set review context from triggering PR: ${repo}#${pr.number}`);
+        const repoParts = { owner: context.repo.owner, repo: context.repo.repo };
+        const payloadPR = context.payload?.pull_request;
+        const usePayloadPR = payloadPR && payloadPR.number === prNum && payloadPR.head?.sha;
+
+        if (usePayloadPR) {
+          buffer.setReviewContext({
+            repo,
+            repoParts,
+            pullRequestNumber: payloadPR.number,
+            pullRequest: payloadPR,
+          });
+          core.info(`Set review context from triggering PR: ${repo}#${payloadPR.number}`);
+        } else {
+          try {
+            const { data: fetchedPR } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNum,
+            });
+            if (fetchedPR?.head?.sha) {
+              buffer.setReviewContext({
+                repo,
+                repoParts,
+                pullRequestNumber: fetchedPR.number,
+                pullRequest: fetchedPR,
+              });
+              core.info(`Set review context from target: ${repo}#${fetchedPR.number}`);
+            } else {
+              core.warning("Fetched PR missing head.sha - cannot set review context");
+            }
+          } catch (fetchErr) {
+            core.warning(`Could not fetch PR #${prNum} for review context: ${getErrorMessage(fetchErr)}`);
+          }
+        }
       }
     }
 

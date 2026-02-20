@@ -215,7 +215,6 @@ func TestEngineSupportsWebFetch(t *testing.T) {
 		{"claude", true},
 		{"codex", false},
 		{"copilot", true}, // Copilot now supports web-fetch
-		{"custom", false},
 	}
 
 	for _, tt := range tests {
@@ -244,7 +243,6 @@ func TestEngineSupportsWebSearch(t *testing.T) {
 		{"claude", true},
 		{"codex", true},
 		{"copilot", false},
-		{"custom", false},
 	}
 
 	for _, tt := range tests {

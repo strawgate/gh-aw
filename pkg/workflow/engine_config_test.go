@@ -3,7 +3,6 @@
 package workflow
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,12 +37,6 @@ func TestExtractEngineConfig(t *testing.T) {
 			frontmatter:           map[string]any{"engine": "codex"},
 			expectedEngineSetting: "codex",
 			expectedConfig:        &EngineConfig{ID: "codex"},
-		},
-		{
-			name:                  "string format - custom",
-			frontmatter:           map[string]any{"engine": "custom"},
-			expectedEngineSetting: "custom",
-			expectedConfig:        &EngineConfig{ID: "custom"},
 		},
 		{
 			name: "object format - minimal (id only)",
@@ -167,44 +160,6 @@ func TestExtractEngineConfig(t *testing.T) {
 			expectedConfig:        &EngineConfig{ID: "claude", Version: "beta", Model: "claude-3-5-sonnet-20241022", MaxTurns: "5", Env: map[string]string{"AWS_REGION": "us-west-2", "API_ENDPOINT": "https://api.example.com"}},
 		},
 		{
-			name: "custom engine with steps",
-			frontmatter: map[string]any{
-				"engine": map[string]any{
-					"id": "custom",
-					"steps": []any{
-						map[string]any{
-							"name": "Setup Node.js",
-							"uses": "actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f",
-							"with": map[string]any{
-								"node-version": "18",
-							},
-						},
-						map[string]any{
-							"name": "Run tests",
-							"run":  "npm test",
-						},
-					},
-				},
-			},
-			expectedEngineSetting: "custom",
-			expectedConfig: &EngineConfig{
-				ID: "custom",
-				Steps: []map[string]any{
-					{
-						"name": "Setup Node.js",
-						"uses": "actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f",
-						"with": map[string]any{
-							"node-version": "18",
-						},
-					},
-					{
-						"name": "Run tests",
-						"run":  "npm test",
-					},
-				},
-			},
-		},
-		{
 			name: "object format - missing id",
 			frontmatter: map[string]any{
 				"engine": map[string]any{
@@ -295,27 +250,6 @@ func TestExtractEngineConfig(t *testing.T) {
 					}
 				}
 
-				if len(config.Steps) != len(test.expectedConfig.Steps) {
-					t.Errorf("Expected config.Steps length %d, got %d", len(test.expectedConfig.Steps), len(config.Steps))
-				} else {
-					for i, expectedStep := range test.expectedConfig.Steps {
-						if i >= len(config.Steps) {
-							t.Errorf("Expected step at index %d", i)
-							continue
-						}
-						actualStep := config.Steps[i]
-						for key, expectedValue := range expectedStep {
-							if actualValue, exists := actualStep[key]; !exists {
-								t.Errorf("Expected step[%d] to contain key '%s'", i, key)
-							} else {
-								// For nested maps, do a simple string comparison for now
-								if fmt.Sprintf("%v", actualValue) != fmt.Sprintf("%v", expectedValue) {
-									t.Errorf("Expected step[%d]['%s'] = '%v', got '%v'", i, key, expectedValue, actualValue)
-								}
-							}
-						}
-					}
-				}
 			}
 		})
 	}
@@ -608,7 +542,6 @@ func TestNilEngineConfig(t *testing.T) {
 	engines := []CodingAgentEngine{
 		NewClaudeEngine(),
 		NewCodexEngine(),
-		NewCustomEngine(),
 	}
 
 	for _, engine := range engines {
@@ -619,21 +552,14 @@ func TestNilEngineConfig(t *testing.T) {
 			}
 			steps := engine.GetExecutionSteps(workflowData, "test-log")
 
-			// Custom engine returns one log step even when no custom steps are configured
-			if engine.GetID() == "custom" {
-				if len(steps) != 1 {
-					t.Errorf("Expected 1 step (log step) for custom engine when no custom steps configured, got %d", len(steps))
-				}
-			} else {
-				// Other engines should return at least one step
-				if len(steps) == 0 {
-					t.Errorf("Expected at least one step for engine %s, got none", engine.GetID())
-				}
+			// Engines should return at least one step
+			if len(steps) == 0 {
+				t.Errorf("Expected at least one step for engine %s, got none", engine.GetID())
+			}
 
-				// Check that the first step has some content
-				if len(steps) > 0 && len(steps[0]) == 0 {
-					t.Errorf("Expected non-empty step content for engine %s", engine.GetID())
-				}
+			// Check that the first step has some content
+			if len(steps) > 0 && len(steps[0]) == 0 {
+				t.Errorf("Expected non-empty step content for engine %s", engine.GetID())
 			}
 		})
 	}
