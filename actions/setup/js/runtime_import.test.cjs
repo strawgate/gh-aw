@@ -775,6 +775,22 @@ describe("runtime_import", () => {
           expect(result).toBe("Issue #123: Test Issue");
         });
 
+        it("should replace all occurrences of the same expression", () => {
+          const content = "Run ID: ${{ github.run_id }}, Again: ${{ github.run_id }}, Third: ${{ github.run_id }}";
+          const result = processExpressions(content, "test.md");
+          expect(result).toBe("Run ID: 12345, Again: 12345, Third: 12345");
+        });
+
+        it("should not re-replace evaluated values that contain expression-like text", () => {
+          // Simulate an issue title that contains literal expression syntax.
+          // The evaluated value for github.event.issue.title is:
+          // "Use ${{ github.actor }} here"
+          // The ${{ github.actor }} inside the title must NOT be replaced a second time.
+          global.context.payload.issue.title = "Use ${{ github.actor }} here";
+          const content = "Title: ${{ github.event.issue.title }}, User: ${{ github.actor }}";
+          const result = processExpressions(content, "test.md");
+          expect(result).toBe("Title: Use ${{ github.actor }} here, User: testuser");
+        });
         it("should throw error for unsafe expressions", () => {
           const content = "Token: ${{ secrets.GITHUB_TOKEN }}";
           expect(() => processExpressions(content, "test.md")).toThrow("unauthorized GitHub Actions expressions");
