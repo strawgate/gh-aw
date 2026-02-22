@@ -214,10 +214,9 @@ func (c *Compiler) buildConclusionJob(data *WorkflowData, mainJobName string, sa
 	if data.SafeOutputs.NoOp != nil {
 		noopMessageEnvVars = append(noopMessageEnvVars, "          GH_AW_NOOP_MESSAGE: ${{ steps.noop.outputs.noop_message }}\n")
 		// Pass the report-as-issue configuration
-		if data.SafeOutputs.NoOp.ReportAsIssue {
+		noopMessageEnvVars = append(noopMessageEnvVars, buildTemplatableBoolEnvVar("GH_AW_NOOP_REPORT_AS_ISSUE", data.SafeOutputs.NoOp.ReportAsIssue)...)
+		if data.SafeOutputs.NoOp.ReportAsIssue == nil {
 			noopMessageEnvVars = append(noopMessageEnvVars, "          GH_AW_NOOP_REPORT_AS_ISSUE: \"true\"\n")
-		} else {
-			noopMessageEnvVars = append(noopMessageEnvVars, "          GH_AW_NOOP_REPORT_AS_ISSUE: \"false\"\n")
 		}
 	}
 

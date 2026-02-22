@@ -2,7 +2,6 @@ package workflow
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/github/gh-aw/pkg/constants"
 	"github.com/github/gh-aw/pkg/logger"
@@ -27,13 +26,13 @@ type CreatePullRequestsConfig struct {
 	Reviewers            []string `yaml:"reviewers,omitempty"`         // List of users/bots to assign as reviewers to the pull request
 	Draft                *string  `yaml:"draft,omitempty"`             // Pointer to distinguish between unset (nil), literal bool, and expression values
 	IfNoChanges          string   `yaml:"if-no-changes,omitempty"`     // Behavior when no changes to push: "warn" (default), "error", or "ignore"
-	AllowEmpty           bool     `yaml:"allow-empty,omitempty"`       // Allow creating PR without patch file or with empty patch (useful for preparing feature branches)
+	AllowEmpty           *string  `yaml:"allow-empty,omitempty"`       // Allow creating PR without patch file or with empty patch (useful for preparing feature branches)
 	TargetRepoSlug       string   `yaml:"target-repo,omitempty"`       // Target repository in format "owner/repo" for cross-repository pull requests
 	AllowedRepos         []string `yaml:"allowed-repos,omitempty"`     // List of additional repositories that pull requests can be created in (additionally to the target-repo)
 	Expires              int      `yaml:"expires,omitempty"`           // Hours until the pull request expires and should be automatically closed (only for same-repo PRs)
-	AutoMerge            bool     `yaml:"auto-merge,omitempty"`        // Enable auto-merge for the pull request when all required checks pass
+	AutoMerge            *string  `yaml:"auto-merge,omitempty"`        // Enable auto-merge for the pull request when all required checks pass
 	BaseBranch           string   `yaml:"base-branch,omitempty"`       // Base branch for the pull request (defaults to github.ref_name if not specified)
-	Footer               *bool    `yaml:"footer,omitempty"`            // Controls whether AI-generated footer is added. When false, visible footer is omitted but XML markers are kept.
+	Footer               *string  `yaml:"footer,omitempty"`            // Controls whether AI-generated footer is added. When false, visible footer is omitted but XML markers are kept.
 	FallbackAsIssue      *bool    `yaml:"fallback-as-issue,omitempty"` // When true (default), creates an issue if PR creation fails. When false, no fallback occurs and issues: write permission is not requested.
 }
 
@@ -106,13 +105,7 @@ func (c *Compiler) buildCreateOutputPullRequestJob(data *WorkflowData, mainJobNa
 	customEnvVars = append(customEnvVars, buildLabelsEnvVar("GH_AW_PR_ALLOWED_LABELS", data.SafeOutputs.CreatePullRequests.AllowedLabels)...)
 	// Pass draft setting - default to true for backwards compatibility
 	if data.SafeOutputs.CreatePullRequests.Draft != nil {
-		draftVal := *data.SafeOutputs.CreatePullRequests.Draft
-		if strings.HasPrefix(draftVal, "${{") {
-			// Expression value - embed unquoted so GitHub Actions evaluates it
-			customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_PR_DRAFT: %s\n", draftVal))
-		} else {
-			customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_PR_DRAFT: %q\n", draftVal))
-		}
+		customEnvVars = append(customEnvVars, buildTemplatableBoolEnvVar("GH_AW_PR_DRAFT", data.SafeOutputs.CreatePullRequests.Draft)...)
 	} else {
 		customEnvVars = append(customEnvVars, "          GH_AW_PR_DRAFT: \"true\"\n")
 	}
@@ -125,10 +118,18 @@ func (c *Compiler) buildCreateOutputPullRequestJob(data *WorkflowData, mainJobNa
 	customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_PR_IF_NO_CHANGES: %q\n", ifNoChanges))
 
 	// Pass the allow-empty configuration
-	customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_PR_ALLOW_EMPTY: %q\n", fmt.Sprintf("%t", data.SafeOutputs.CreatePullRequests.AllowEmpty)))
+	if data.SafeOutputs.CreatePullRequests.AllowEmpty != nil {
+		customEnvVars = append(customEnvVars, buildTemplatableBoolEnvVar("GH_AW_PR_ALLOW_EMPTY", data.SafeOutputs.CreatePullRequests.AllowEmpty)...)
+	} else {
+		customEnvVars = append(customEnvVars, "          GH_AW_PR_ALLOW_EMPTY: \"false\"\n")
+	}
 
 	// Pass the auto-merge configuration
-	customEnvVars = append(customEnvVars, fmt.Sprintf("          GH_AW_PR_AUTO_MERGE: %q\n", fmt.Sprintf("%t", data.SafeOutputs.CreatePullRequests.AutoMerge)))
+	if data.SafeOutputs.CreatePullRequests.AutoMerge != nil {
+		customEnvVars = append(customEnvVars, buildTemplatableBoolEnvVar("GH_AW_PR_AUTO_MERGE", data.SafeOutputs.CreatePullRequests.AutoMerge)...)
+	} else {
+		customEnvVars = append(customEnvVars, "          GH_AW_PR_AUTO_MERGE: \"false\"\n")
+	}
 
 	// Pass the fallback-as-issue configuration - default to true for backwards compatibility
 	if data.SafeOutputs.CreatePullRequests.FallbackAsIssue != nil {
@@ -157,7 +158,7 @@ func (c *Compiler) buildCreateOutputPullRequestJob(data *WorkflowData, mainJobNa
 	}
 
 	// Add footer flag if explicitly set to false
-	if data.SafeOutputs.CreatePullRequests.Footer != nil && !*data.SafeOutputs.CreatePullRequests.Footer {
+	if data.SafeOutputs.CreatePullRequests.Footer != nil && *data.SafeOutputs.CreatePullRequests.Footer == "false" {
 		customEnvVars = append(customEnvVars, "          GH_AW_FOOTER: \"false\"\n")
 		createPRLog.Print("Footer disabled - XML markers will be included but visible footer content will be omitted")
 	}
@@ -266,9 +267,11 @@ func (c *Compiler) parsePullRequestsConfig(outputMap map[string]any) *CreatePull
 
 	// Pre-process templatable bool fields: convert literal booleans to strings so that
 	// GitHub Actions expression strings (e.g. "${{ inputs.draft-prs }}") are also accepted.
-	if err := preprocessBoolFieldAsString(configData, "draft", createPRLog); err != nil {
-		createPRLog.Printf("Invalid draft value: %v", err)
-		return nil
+	for _, field := range []string{"draft", "allow-empty", "auto-merge", "footer"} {
+		if err := preprocessBoolFieldAsString(configData, field, createPRLog); err != nil {
+			createPRLog.Printf("Invalid %s value: %v", field, err)
+			return nil
+		}
 	}
 
 	// Unmarshal into typed config struct
