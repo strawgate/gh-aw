@@ -61,6 +61,7 @@ type RepoMemoryEntry struct {
 	Description       string   `yaml:"description,omitempty"`        // optional description for this memory
 	CreateOrphan      bool     `yaml:"create-orphan,omitempty"`      // create orphaned branch if missing (default: true)
 	AllowedExtensions []string `yaml:"allowed-extensions,omitempty"` // allowed file extensions (default: [".json", ".jsonl", ".txt", ".md", ".csv"])
+	Wiki              bool     `yaml:"wiki,omitempty"`               // use the GitHub Wiki git repository instead of the regular repo
 }
 
 // RepoMemoryToolConfig represents the configuration for repo-memory in tools
@@ -220,9 +221,11 @@ func (c *Compiler) extractRepoMemoryConfig(toolsConfig *ToolsConfig, workflowID 
 				}
 
 				// Parse branch-name
+				explicitBranchName := false
 				if branchName, exists := memoryMap["branch-name"]; exists {
 					if branchStr, ok := branchName.(string); ok {
 						entry.BranchName = branchStr
+						explicitBranchName = true
 					}
 				}
 				// Set default branch name if not specified.
@@ -309,6 +312,20 @@ func (c *Compiler) extractRepoMemoryConfig(toolsConfig *ToolsConfig, workflowID 
 					}
 				}
 
+				// Parse wiki field
+				if wiki, exists := memoryMap["wiki"]; exists {
+					if wikiBool, ok := wiki.(bool); ok {
+						entry.Wiki = wikiBool
+					}
+				}
+				// Apply wiki-mode defaults: wikis use master branch and never need orphan creation
+				if entry.Wiki {
+					if !explicitBranchName {
+						entry.BranchName = "master"
+					}
+					entry.CreateOrphan = false
+				}
+
 				// Parse allowed-extensions field
 				if allowedExts, exists := memoryMap["allowed-extensions"]; exists {
 					if extArray, ok := allowedExts.([]any); ok {
@@ -370,9 +387,11 @@ func (c *Compiler) extractRepoMemoryConfig(toolsConfig *ToolsConfig, workflowID 
 		}
 
 		// Parse branch-name
+		explicitBranchName := false
 		if branchName, exists := configMap["branch-name"]; exists {
 			if branchStr, ok := branchName.(string); ok {
 				entry.BranchName = branchStr
+				explicitBranchName = true
 			}
 		}
 
@@ -450,6 +469,20 @@ func (c *Compiler) extractRepoMemoryConfig(toolsConfig *ToolsConfig, workflowID 
 			}
 		}
 
+		// Parse wiki field
+		if wiki, exists := configMap["wiki"]; exists {
+			if wikiBool, ok := wiki.(bool); ok {
+				entry.Wiki = wikiBool
+			}
+		}
+		// Apply wiki-mode defaults: wikis use master branch and never need orphan creation
+		if entry.Wiki {
+			if !explicitBranchName {
+				entry.BranchName = "master"
+			}
+			entry.CreateOrphan = false
+		}
+
 		// Parse allowed-extensions field
 		if allowedExts, exists := configMap["allowed-extensions"]; exists {
 			if extArray, ok := allowedExts.([]any); ok {
@@ -504,7 +537,11 @@ func generateRepoMemoryArtifactUpload(builder *strings.Builder, data *WorkflowDa
 		sanitizedID := SanitizeWorkflowIDForCacheKey(memory.ID)
 
 		// Step: Upload repo-memory directory as artifact
-		fmt.Fprintf(builder, "      - name: Upload repo-memory artifact (%s)\n", memory.ID)
+		if memory.Wiki {
+			fmt.Fprintf(builder, "      - name: Upload wiki-memory artifact (%s)\n", memory.ID)
+		} else {
+			fmt.Fprintf(builder, "      - name: Upload repo-memory artifact (%s)\n", memory.ID)
+		}
 		builder.WriteString("        if: always()\n")
 		fmt.Fprintf(builder, "        uses: %s\n", GetActionPin("actions/upload-artifact"))
 		builder.WriteString("        with:\n")
@@ -537,7 +574,11 @@ func generateRepoMemoryPushSteps(builder *strings.Builder, data *WorkflowData) {
 		memoryDir := "/tmp/gh-aw/repo-memory/" + memory.ID
 
 		// Step: Push changes to repo-memory branch
-		fmt.Fprintf(builder, "      - name: Push repo-memory changes (%s)\n", memory.ID)
+		if memory.Wiki {
+			fmt.Fprintf(builder, "      - name: Push wiki-memory changes (%s)\n", memory.ID)
+		} else {
+			fmt.Fprintf(builder, "      - name: Push repo-memory changes (%s)\n", memory.ID)
+		}
 		builder.WriteString("        if: always()\n")
 		builder.WriteString("        env:\n")
 		builder.WriteString("          GH_TOKEN: ${{ github.token }}\n")
@@ -619,12 +660,20 @@ func generateRepoMemorySteps(builder *strings.Builder, data *WorkflowData) {
 		if targetRepo == "" {
 			targetRepo = "${{ github.repository }}"
 		}
+		// For wiki mode, append .wiki to the repo path so the clone script uses the wiki git URL
+		if memory.Wiki {
+			targetRepo = targetRepo + ".wiki"
+		}
 
 		// Determine the memory directory
 		memoryDir := "/tmp/gh-aw/repo-memory/" + memory.ID
 
 		// Step 1: Clone the repo-memory branch
-		fmt.Fprintf(builder, "      - name: Clone repo-memory branch (%s)\n", memory.ID)
+		if memory.Wiki {
+			fmt.Fprintf(builder, "      - name: Clone wiki-memory branch (%s)\n", memory.ID)
+		} else {
+			fmt.Fprintf(builder, "      - name: Clone repo-memory branch (%s)\n", memory.ID)
+		}
 		builder.WriteString("        env:\n")
 		builder.WriteString("          GH_TOKEN: ${{ github.token }}\n")
 		builder.WriteString("          GITHUB_SERVER_URL: ${{ github.server_url }}\n")
@@ -679,7 +728,11 @@ func (c *Compiler) buildPushRepoMemoryJob(data *WorkflowData, threatDetectionEna
 
 		// Download artifact step
 		var step strings.Builder
-		fmt.Fprintf(&step, "      - name: Download repo-memory artifact (%s)\n", memory.ID)
+		if memory.Wiki {
+			fmt.Fprintf(&step, "      - name: Download wiki-memory artifact (%s)\n", memory.ID)
+		} else {
+			fmt.Fprintf(&step, "      - name: Download repo-memory artifact (%s)\n", memory.ID)
+		}
 		fmt.Fprintf(&step, "        uses: %s\n", GetActionPin("actions/download-artifact"))
 		step.WriteString("        continue-on-error: true\n")
 		step.WriteString("        with:\n")
@@ -697,6 +750,10 @@ func (c *Compiler) buildPushRepoMemoryJob(data *WorkflowData, threatDetectionEna
 		if targetRepo == "" {
 			targetRepo = "${{ github.repository }}"
 		}
+		// For wiki mode, append .wiki to the repo path so the push script uses the wiki git URL
+		if memory.Wiki {
+			targetRepo = targetRepo + ".wiki"
+		}
 
 		artifactDir := "/tmp/gh-aw/repo-memory/" + memory.ID
 
@@ -708,7 +765,11 @@ func (c *Compiler) buildPushRepoMemoryJob(data *WorkflowData, threatDetectionEna
 
 		// Build step with github-script action
 		var step strings.Builder
-		fmt.Fprintf(&step, "      - name: Push repo-memory changes (%s)\n", memory.ID)
+		if memory.Wiki {
+			fmt.Fprintf(&step, "      - name: Push wiki-memory changes (%s)\n", memory.ID)
+		} else {
+			fmt.Fprintf(&step, "      - name: Push repo-memory changes (%s)\n", memory.ID)
+		}
 		fmt.Fprintf(&step, "        id: push_repo_memory_%s\n", memory.ID)
 		step.WriteString("        if: always()\n")
 		fmt.Fprintf(&step, "        uses: %s\n", GetActionPin("actions/github-script"))
@@ -720,6 +781,11 @@ func (c *Compiler) buildPushRepoMemoryJob(data *WorkflowData, threatDetectionEna
 		fmt.Fprintf(&step, "          MEMORY_ID: %s\n", memory.ID)
 		fmt.Fprintf(&step, "          TARGET_REPO: %s\n", targetRepo)
 		fmt.Fprintf(&step, "          BRANCH_NAME: %s\n", memory.BranchName)
+		// For wiki mode, pre-populate the allowed-repos list with the wiki repo so the push
+		// script accepts it (defaultRepo is always the plain github.repository, not .wiki)
+		if memory.Wiki {
+			fmt.Fprintf(&step, "          REPO_MEMORY_ALLOWED_REPOS: %s\n", targetRepo)
+		}
 		fmt.Fprintf(&step, "          MAX_FILE_SIZE: %d\n", memory.MaxFileSize)
 		fmt.Fprintf(&step, "          MAX_FILE_COUNT: %d\n", memory.MaxFileCount)
 		fmt.Fprintf(&step, "          MAX_PATCH_SIZE: %d\n", memory.MaxPatchSize)
