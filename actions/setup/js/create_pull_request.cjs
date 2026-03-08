@@ -244,7 +244,11 @@ async function main(config = {}) {
 
     // Determine the patch file path from the message (set by the MCP server handler)
     const patchFilePath = pullRequestItem.patch_path;
+    const bundleFilePath = pullRequestItem.bundle_path;
     core.info(`Patch file path: ${patchFilePath || "(not set)"}`);
+    if (bundleFilePath) {
+      core.info(`Bundle file path: ${bundleFilePath}`);
+    }
 
     // Resolve and validate target repository
     const repoResult = resolveAndValidateRepo(pullRequestItem, defaultTargetRepo, allowedRepos, "pull request");
@@ -680,12 +684,30 @@ async function main(config = {}) {
         core.info(patchLines[i]);
       }
 
-      // Patches are created with git format-patch, so use git am to apply them
-      // Use --3way to handle cross-repo patches where the patch base may differ from target repo
-      // This allows git to resolve create-vs-modify mismatches when a file exists in target but not source
+      // Prefer bundle-based transfer when available to preserve commit DAG,
+      // including merge commits. Fall back to patch application for compatibility.
       try {
-        await exec.exec(`git am --3way ${patchFilePath}`);
-        core.info("Patch applied successfully");
+        let appliedViaBundle = false;
+        if (bundleFilePath && fs.existsSync(bundleFilePath) && pullRequestItem.branch) {
+          const importedRef = `refs/gh-aw/imported/${crypto.randomBytes(8).toString("hex")}`;
+          try {
+            core.info("Attempting bundle-based commit transfer...");
+            await exec.exec("git", ["fetch", bundleFilePath, `${pullRequestItem.branch}:${importedRef}`]);
+            await exec.exec("git", ["merge", "--ff-only", importedRef]);
+            appliedViaBundle = true;
+            core.info("Bundle applied successfully (fast-forward)");
+          } catch (bundleError) {
+            core.warning(`Bundle apply failed; falling back to patch apply: ${bundleError instanceof Error ? bundleError.message : String(bundleError)}`);
+          }
+        }
+
+        if (!appliedViaBundle) {
+          // Patches are created with git format-patch, so use git am to apply them
+          // Use --3way to handle cross-repo patches where the patch base may differ from target repo
+          // This allows git to resolve create-vs-modify mismatches when a file exists in target but not source
+          await exec.exec(`git am --3way ${patchFilePath}`);
+          core.info("Patch applied successfully");
+        }
       } catch (patchError) {
         core.error(`Failed to apply patch: ${patchError instanceof Error ? patchError.message : String(patchError)}`);
 

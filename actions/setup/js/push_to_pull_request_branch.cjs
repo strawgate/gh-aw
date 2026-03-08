@@ -3,6 +3,7 @@
 
 /** @type {typeof import("fs")} */
 const fs = require("fs");
+const crypto = require("crypto");
 const { generateStagedPreview } = require("./staged_preview.cjs");
 const { updateActivationCommentWithCommit, updateActivationComment } = require("./update_activation_comment.cjs");
 const { getErrorMessage } = require("./error_helpers.cjs");
@@ -98,7 +99,11 @@ async function main(config = {}) {
 
     // Determine the patch file path from the message (set by the MCP server handler)
     const patchFilePath = message.patch_path;
+    const bundleFilePath = message.bundle_path;
     core.info(`Patch file path: ${patchFilePath || "(not set)"}`);
+    if (bundleFilePath) {
+      core.info(`Bundle file path: ${bundleFilePath}`);
+    }
 
     // Check if patch file exists and has valid content
     if (!patchFilePath || !fs.existsSync(patchFilePath)) {
@@ -444,10 +449,28 @@ async function main(config = {}) {
           // Non-fatal - extra empty commit will be skipped
         }
 
-        // Use --3way to handle cross-repo patches where the patch base may differ from target repo
-        // This allows git to resolve create-vs-modify mismatches when a file exists in target but not source
-        await exec.exec(`git am --3way ${patchFilePath}`);
-        core.info("Patch applied successfully");
+        // Prefer bundle-based transfer when available to preserve commit DAG.
+        // If commit_title_suffix is set, we must use patch mode to rewrite subjects.
+        let appliedViaBundle = false;
+        if (!commitTitleSuffix && bundleFilePath && fs.existsSync(bundleFilePath) && message.branch) {
+          const importedRef = `refs/gh-aw/imported/${crypto.randomBytes(8).toString("hex")}`;
+          try {
+            core.info("Attempting bundle-based commit transfer...");
+            await exec.exec("git", ["fetch", bundleFilePath, `${message.branch}:${importedRef}`]);
+            await exec.exec("git", ["merge", "--ff-only", importedRef]);
+            appliedViaBundle = true;
+            core.info("Bundle applied successfully (fast-forward)");
+          } catch (bundleError) {
+            core.warning(`Bundle apply failed; falling back to patch apply: ${getErrorMessage(bundleError)}`);
+          }
+        }
+
+        if (!appliedViaBundle) {
+          // Use --3way to handle cross-repo patches where the patch base may differ from target repo
+          // This allows git to resolve create-vs-modify mismatches when a file exists in target but not source
+          await exec.exec(`git am --3way ${patchFilePath}`);
+          core.info("Patch applied successfully");
+        }
       } catch (error) {
         core.error(`Failed to apply patch: ${getErrorMessage(error)}`);
 
