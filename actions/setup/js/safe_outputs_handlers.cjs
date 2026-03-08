@@ -348,6 +348,9 @@ function createHandlers(server, appendSafeOutput, config = {}) {
 
     // Store the patch path in the entry so consumers know which file to use
     entry.patch_path = patchResult.patchPath;
+    if (patchResult.bundlePath) {
+      entry.bundle_path = patchResult.bundlePath;
+    }
 
     appendSafeOutput(entry);
     return {
@@ -452,6 +455,9 @@ function createHandlers(server, appendSafeOutput, config = {}) {
 
     // Store the patch path in the entry so consumers know which file to use
     entry.patch_path = patchResult.patchPath;
+    if (patchResult.bundlePath) {
+      entry.bundle_path = patchResult.bundlePath;
+    }
 
     appendSafeOutput(entry);
     return {
