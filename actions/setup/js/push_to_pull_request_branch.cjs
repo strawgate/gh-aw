@@ -88,9 +88,16 @@ async function main(config = {}) {
 
     processedCount++;
 
-    // Determine the patch file path from the message (set by the MCP server handler)
+    // Determine the patch/bundle file paths from the message (set by the MCP server handler)
     const patchFilePath = message.patch_path;
+    const bundleFilePath = message.bundle_path;
     core.info(`Patch file path: ${patchFilePath || "(not set)"}`);
+    if (bundleFilePath) {
+      core.info(`Bundle file path: ${bundleFilePath}`);
+      if (!fs.existsSync(bundleFilePath)) {
+        core.warning(`Bundle file not found at '${bundleFilePath}'. Falling back to patch apply.`);
+      }
+    }
 
     // Check if patch file exists and has valid content
     if (!patchFilePath || !fs.existsSync(patchFilePath)) {
