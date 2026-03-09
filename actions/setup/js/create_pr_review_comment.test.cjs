@@ -412,6 +412,32 @@ describe("create_pr_review_comment.cjs", () => {
     expect(buffer.getBufferedCount()).toBe(0);
   });
 
+  it("should treat pull_request_target as PR context for triggering target", async () => {
+    global.context = {
+      eventName: "pull_request_target",
+      runId: 12345,
+      repo: { owner: "testowner", repo: "testrepo" },
+      payload: {
+        pull_request: { number: 123, head: { sha: "abc123def456" } },
+        repository: {
+          html_url: "https://github.com/testowner/testrepo",
+        },
+      },
+    };
+    const handler = await createHandler({ target: "triggering" });
+    const message = {
+      type: "create_pull_request_review_comment",
+      path: "src/main.js",
+      line: 10,
+      body: "This should be buffered",
+    };
+    const result = await handler(message, {});
+
+    expect(result.success).toBe(true);
+    expect(result.buffered).toBe(true);
+    expect(buffer.getBufferedCount()).toBe(1);
+  });
+
   it("should reject comments targeting a different PR than the first comment", async () => {
     // First comment sets context to PR #123
     const handler = await createHandler();

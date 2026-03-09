@@ -95,6 +95,9 @@ async function main(config = {}) {
     core.info(`Patch file path: ${patchFilePath || "(not set)"}`);
     if (bundleFilePath) {
       core.info(`Bundle file path: ${bundleFilePath}`);
+      if (!fs.existsSync(bundleFilePath)) {
+        core.warning(`Bundle file not found at '${bundleFilePath}'. Falling back to patch apply.`);
+      }
     }
 
     // Check if patch file exists and has valid content
