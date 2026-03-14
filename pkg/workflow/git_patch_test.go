@@ -98,6 +98,11 @@ Please do the following tasks:
 		t.Error("Expected artifact path '/tmp/gh-aw/aw-*.patch' in unified upload")
 	}
 
+	// Verify the bundle path is included in the unified upload for bundle-first transfer
+	if !strings.Contains(lockContent, "/tmp/gh-aw/aw-*.bundle") {
+		t.Error("Expected artifact path '/tmp/gh-aw/aw-*.bundle' in unified upload")
+	}
+
 	// Verify the upload step has ignore for missing files
 	if !strings.Contains(lockContent, "if-no-files-found: ignore") {
 		t.Error("Expected 'if-no-files-found: ignore' in upload step")

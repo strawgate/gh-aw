@@ -627,6 +627,7 @@ func TestGenerateMainJobSteps(t *testing.T) {
 			expectInOutput: []string{
 				"- name: Checkout repository",
 				"/tmp/gh-aw/aw-*.patch", // Git patch glob path should be collected
+				"/tmp/gh-aw/aw-*.bundle",
 			},
 			shouldError: false,
 		},
