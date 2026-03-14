@@ -60,6 +60,16 @@ function getPatchPath(branchName) {
 }
 
 /**
+ * Get the bundle file path for a given branch name
+ * @param {string} branchName - The branch name
+ * @returns {string} The full bundle file path
+ */
+function getBundlePath(branchName) {
+  const sanitized = sanitizeBranchNameForPatch(branchName);
+  return `/tmp/gh-aw/aw-${sanitized}.bundle`;
+}
+
+/**
  * Sanitize a repo slug for use in a filename
  * @param {string} repoSlug - The repo slug (owner/repo)
  * @returns {string} The sanitized slug safe for use in a filename
@@ -79,6 +89,18 @@ function getPatchPathForRepo(branchName, repoSlug) {
   const sanitizedBranch = sanitizeBranchNameForPatch(branchName);
   const sanitizedRepo = sanitizeRepoSlugForPatch(repoSlug);
   return `/tmp/gh-aw/aw-${sanitizedRepo}-${sanitizedBranch}.patch`;
+}
+
+/**
+ * Get the bundle file path for a given branch name and repo slug
+ * @param {string} branchName - The branch name
+ * @param {string} repoSlug - The repository slug (owner/repo)
+ * @returns {string} The full bundle file path including repo disambiguation
+ */
+function getBundlePathForRepo(branchName, repoSlug) {
+  const sanitizedBranch = sanitizeBranchNameForPatch(branchName);
+  const sanitizedRepo = sanitizeRepoSlugForPatch(repoSlug);
+  return `/tmp/gh-aw/aw-${sanitizedRepo}-${sanitizedBranch}.bundle`;
 }
 
 /**
@@ -122,6 +144,7 @@ async function generateGitPatch(branchName, baseBranch, options = {}) {
     return excludePathspecs.length > 0 ? ["--", ...excludePathspecs] : [];
   }
   const patchPath = options.repoSlug ? getPatchPathForRepo(branchName, options.repoSlug) : getPatchPath(branchName);
+  const bundlePath = options.repoSlug ? getBundlePathForRepo(branchName, options.repoSlug) : getBundlePath(branchName);
 
   // Validate baseBranch early to avoid confusing git errors (e.g., origin/undefined)
   if (typeof baseBranch !== "string" || baseBranch.trim() === "") {
@@ -129,6 +152,7 @@ async function generateGitPatch(branchName, baseBranch, options = {}) {
     debugLog(`Invalid baseBranch: ${errorMessage}`);
     return {
       patchPath,
+      bundlePath,
       patchGenerated: false,
       errorMessage,
     };
@@ -147,7 +171,34 @@ async function generateGitPatch(branchName, baseBranch, options = {}) {
   }
 
   let patchGenerated = false;
+  let bundleGenerated = false;
   let errorMessage = null;
+
+  /**
+   * Write patch + bundle artifacts for a commit range.
+   * Bundle is best-effort; patch remains required for compatibility paths.
+   * @param {string} fromRef
+   * @param {string} toRef
+   */
+  function writeArtifacts(fromRef, toRef) {
+    const patchContent = execGitSync(["format-patch", `${fromRef}..${toRef}`, "--stdout", ...excludeArgs()], { cwd });
+    if (patchContent && patchContent.trim()) {
+      fs.writeFileSync(patchPath, patchContent, "utf8");
+      patchGenerated = true;
+
+      try {
+        // Include only commits reachable from toRef and not from fromRef.
+        execGitSync(["bundle", "create", bundlePath, toRef, `^${fromRef}`], { cwd });
+        bundleGenerated = fs.existsSync(bundlePath);
+        if (bundleGenerated) {
+          debugLog(`Generated bundle artifact: ${bundlePath}`);
+        }
+      } catch (bundleError) {
+        // Non-fatal: patch remains the source of truth for current behavior.
+        debugLog(`Bundle generation failed (non-fatal): ${getErrorMessage(bundleError)}`);
+      }
+    }
+  }
 
   try {
     // Strategy 1: If we have a branch name, check if that branch exists and get its diff
@@ -252,12 +303,10 @@ async function generateGitPatch(branchName, baseBranch, options = {}) {
         debugLog(`Strategy 1: Found ${commitCount} commits between ${baseRef} and ${branchName}`);
 
         if (commitCount > 0) {
-          // Generate patch from the determined base to the branch
-          const patchContent = execGitSync(["format-patch", `${baseRef}..${branchName}`, "--stdout", ...excludeArgs()], { cwd });
-
-          if (patchContent && patchContent.trim()) {
-            fs.writeFileSync(patchPath, patchContent, "utf8");
-            patchGenerated = true;
+          // Generate artifacts from the determined base to the branch
+          writeArtifacts(baseRef, branchName);
+          if (patchGenerated) {
+            const patchContent = fs.readFileSync(patchPath, "utf8");
             debugLog(`Strategy 1: SUCCESS - Generated patch with ${patchContent.split("\n").length} lines`);
           }
         } else if (mode === "incremental") {
@@ -321,12 +370,10 @@ async function generateGitPatch(branchName, baseBranch, options = {}) {
             debugLog(`Strategy 2: Found ${commitCount} commits between GITHUB_SHA and HEAD`);
 
             if (commitCount > 0) {
-              // Generate patch from GITHUB_SHA to HEAD
-              const patchContent = execGitSync(["format-patch", `${githubSha}..HEAD`, "--stdout", ...excludeArgs()], { cwd });
-
-              if (patchContent && patchContent.trim()) {
-                fs.writeFileSync(patchPath, patchContent, "utf8");
-                patchGenerated = true;
+              // Generate artifacts from GITHUB_SHA to HEAD
+              writeArtifacts(githubSha, "HEAD");
+              if (patchGenerated) {
+                const patchContent = fs.readFileSync(patchPath, "utf8");
                 debugLog(`Strategy 2: SUCCESS - Generated patch with ${patchContent.split("\n").length} lines`);
               }
             }
@@ -380,11 +427,9 @@ async function generateGitPatch(branchName, baseBranch, options = {}) {
               }
 
               if (baseCommit) {
-                const patchContent = execGitSync(["format-patch", `${baseCommit}..${branchName}`, "--stdout", ...excludeArgs()], { cwd });
-
-                if (patchContent && patchContent.trim()) {
-                  fs.writeFileSync(patchPath, patchContent, "utf8");
-                  patchGenerated = true;
+                writeArtifacts(baseCommit, branchName);
+                if (patchGenerated) {
+                  const patchContent = fs.readFileSync(patchPath, "utf8");
                   debugLog(`Strategy 3: SUCCESS - Generated patch with ${patchContent.split("\n").length} lines`);
                 }
               } else {
@@ -426,6 +471,7 @@ async function generateGitPatch(branchName, baseBranch, options = {}) {
     return {
       success: true,
       patchPath: patchPath,
+      bundlePath: bundleGenerated ? bundlePath : undefined,
       patchSize: patchSize,
       patchLines: patchLines,
     };
@@ -437,13 +483,16 @@ async function generateGitPatch(branchName, baseBranch, options = {}) {
     success: false,
     error: errorMessage || "No changes to commit - no commits found",
     patchPath: patchPath,
+    bundlePath: bundleGenerated ? bundlePath : undefined,
   };
 }
 
 module.exports = {
   generateGitPatch,
   getPatchPath,
+  getBundlePath,
   getPatchPathForRepo,
+  getBundlePathForRepo,
   sanitizeBranchNameForPatch,
   sanitizeRepoSlugForPatch,
 };

@@ -483,6 +483,7 @@ func (c *Compiler) generateMainJobSteps(yaml *strings.Builder, data *WorkflowDat
 	// tools are called, providing immediate error feedback if no changes are present.
 	if usesPatchesAndCheckouts(data.SafeOutputs) {
 		artifactPaths = append(artifactPaths, "/tmp/gh-aw/aw-*.patch")
+		artifactPaths = append(artifactPaths, "/tmp/gh-aw/aw-*.bundle")
 	}
 
 	// Add post-steps (if any) after AI execution
