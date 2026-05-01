@@ -187,6 +187,15 @@ async function main() {
   saveState(stateFile, state);
   core.info(`Experiment state written to ${stateFile}`);
 
+  // Persist current-run assignments to a separate file so downstream jobs and
+  // OTLP telemetry can read which variant was selected without recomputing it.
+  // Only written when at least one experiment was successfully assigned.
+  if (Object.keys(assignments).length > 0) {
+    const assignmentsFile = path.join(stateDir, "assignments.json");
+    fs.writeFileSync(assignmentsFile, JSON.stringify(assignments, null, 2) + "\n", "utf8");
+    core.info(`Experiment assignments written to ${assignmentsFile}`);
+  }
+
   // Write step summary.
   await writeSummary(assignments, spec, state, core);
 }

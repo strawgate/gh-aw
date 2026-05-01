@@ -3,6 +3,7 @@
 
 const { randomBytes } = require("crypto");
 const fs = require("fs");
+const path = require("path");
 const { nowMs } = require("./performance_now.cjs");
 const { buildWorkflowRunUrl } = require("./workflow_metadata_helpers.cjs");
 const { getErrorMessage } = require("./error_helpers.cjs");
@@ -203,6 +204,84 @@ function appendToOTLPJSONL(payload) {
   } catch {
     // Mirror failures are non-fatal; do not propagate.
   }
+}
+
+// ---------------------------------------------------------------------------
+// Experiment assignments
+// ---------------------------------------------------------------------------
+
+/**
+ * Path to the experiment assignments file written by pick_experiment.cjs.
+ * Contains a JSON object mapping experiment name → selected variant for the
+ * current workflow run.  Example: `{"caveman":"yes","style":"detailed"}`.
+ *
+ * Used as the default fallback when `GH_AW_EXPERIMENT_STATE_DIR` is not set.
+ * @type {string}
+ */
+const EXPERIMENT_ASSIGNMENTS_PATH = "/tmp/gh-aw/experiments/assignments.json";
+
+/**
+ * Read the experiment assignments written by pick_experiment.cjs.
+ * Returns `null` when the file is absent (no experiments declared) or cannot
+ * be parsed.  Errors are silently swallowed — this is an observability
+ * enrichment and must never break the workflow.
+ *
+ * The path is derived from `GH_AW_EXPERIMENT_STATE_DIR` so it stays in sync
+ * with pick_experiment.cjs, which writes to `<GH_AW_EXPERIMENT_STATE_DIR>/assignments.json`.
+ * Falls back to {@link EXPERIMENT_ASSIGNMENTS_PATH} when the env var is absent.
+ *
+ * @returns {Record<string, string> | null}
+ */
+function readExperimentAssignments() {
+  const stateDir = process.env.GH_AW_EXPERIMENT_STATE_DIR || "";
+  const filePath = stateDir ? path.join(stateDir, "assignments.json") : EXPERIMENT_ASSIGNMENTS_PATH;
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build OTLP span attributes for the active experiment assignments.
+ *
+ * Adds one `gh-aw.experiment.<name>` attribute per experiment (carrying the
+ * selected variant string) and a single `gh-aw.experiments` attribute with a
+ * compact JSON string of only the valid emitted assignments (key-sorted for
+ * determinism), which enables simple substring searches in backends that do
+ * not support per-attribute filtering.
+ *
+ * Invalid assignments (non-string or empty-string variants) are skipped for
+ * both the per-experiment attributes and the aggregated JSON.
+ *
+ * Returns an empty array when no assignments are available.
+ *
+ * @param {Record<string, string> | null} assignments
+ * @returns {Array<{key: string, value: object}>}
+ */
+function buildExperimentAttributes(assignments) {
+  if (!assignments || typeof assignments !== "object") return [];
+  const names = Object.keys(assignments).sort();
+  if (names.length === 0) return [];
+  const attrs = [];
+  /** @type {Record<string, string>} */
+  const validAssignments = {};
+  for (const name of names) {
+    const variant = assignments[name];
+    if (typeof variant === "string" && variant) {
+      attrs.push(buildAttr(`gh-aw.experiment.${name}`, variant));
+      validAssignments[name] = variant;
+    }
+  }
+  if (attrs.length > 0) {
+    attrs.push(buildAttr("gh-aw.experiments", JSON.stringify(validAssignments)));
+  }
+  return attrs;
 }
 
 // ---------------------------------------------------------------------------
@@ -555,6 +634,11 @@ async function sendJobSetupSpan(options = {}) {
   if (itemNumber) attributes.push(buildAttr("gh-aw.trigger.item_number", itemNumber));
   if (triggerLabel) attributes.push(buildAttr("gh-aw.trigger.label", triggerLabel));
 
+  // Include experiment assignments so each span can be correlated with the
+  // A/B variant selected for this run (written by pick_experiment.cjs).
+  const experimentAssignments = readExperimentAssignments();
+  attributes.push(...buildExperimentAttributes(experimentAssignments));
+
   const resourceAttributes = [buildAttr("github.repository", repository), buildAttr("github.run_id", runId)];
   if (repository && runId) {
     const [owner, repo] = repository.split("/");
@@ -850,6 +934,11 @@ async function sendJobConclusionSpan(spanName, options = {}) {
     }
   }
 
+  // Include experiment assignments so each span can be correlated with the
+  // A/B variant selected for this run (written by pick_experiment.cjs).
+  const conclusionExperimentAssignments = readExperimentAssignments();
+  attributes.push(...buildExperimentAttributes(conclusionExperimentAssignments));
+
   const resourceAttributes = [buildAttr("github.repository", repository), buildAttr("github.run_id", runId)];
   if (repository && runId) {
     const [owner, repo] = repository.split("/");
@@ -1029,4 +1118,7 @@ module.exports = {
   sendJobConclusionSpan,
   OTEL_JSONL_PATH,
   appendToOTLPJSONL,
+  readExperimentAssignments,
+  buildExperimentAttributes,
+  EXPERIMENT_ASSIGNMENTS_PATH,
 };
