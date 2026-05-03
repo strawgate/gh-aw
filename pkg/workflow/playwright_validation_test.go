@@ -3,7 +3,6 @@
 package workflow
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,7 +83,7 @@ func TestValidatePlaywrightMode(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err, "expected an error but got none")
-				assert.True(t, strings.Contains(err.Error(), tt.errorSubstr),
+				assert.Contains(t, err.Error(), tt.errorSubstr,
 					"error %q should contain %q", err.Error(), tt.errorSubstr)
 			} else {
 				assert.NoError(t, err, "expected no error")
@@ -98,8 +97,8 @@ func TestValidatePlaywrightModeNilWorkflow(t *testing.T) {
 	compiler := NewCompiler()
 
 	err := compiler.validatePlaywrightMode(nil)
-	assert.NoError(t, err, "nil workflowData should not return error")
+	require.NoError(t, err, "nil workflowData should not return error")
 
 	err = compiler.validatePlaywrightMode(&WorkflowData{Tools: nil})
-	assert.NoError(t, err, "nil tools should not return error")
+	require.NoError(t, err, "nil tools should not return error")
 }
