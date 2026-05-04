@@ -38,12 +38,14 @@ import "maps"
 //   - "gpt-4.1"      → OpenAI GPT-4.1 family
 //   - "gpt-5"        → OpenAI GPT-5 family
 //   - "gpt-5-mini"   → OpenAI GPT-5-mini family
+//   - "gpt-5-nano"   → OpenAI GPT-5-nano family (ultra-lightweight)
 //   - "gpt-5-codex"  → OpenAI GPT-5-Codex family
+//   - "reasoning"    → OpenAI o1/o3/o4 reasoning model families
 //   - "gemini-flash" → Google Gemini Flash family (fast/lightweight)
 //   - "gemini-pro"   → Google Gemini Pro family (full-capability)
 //
 // Meta-aliases (reference other aliases; resolved recursively by AWF):
-//   - "mini"  → haiku, gpt-5-mini, gemini-flash
+//   - "mini"  → haiku, gpt-5-mini, gpt-5-nano, gemini-flash
 //   - "large" → sonnet, gpt-5, gemini-pro
 //   - "auto"  → large (convenience alias for the default capable tier)
 func BuiltinModelAliases() map[string][]string {
@@ -74,9 +76,21 @@ func BuiltinModelAliases() map[string][]string {
 			"copilot/gpt-5*mini*",
 			"openai/gpt-5*mini*",
 		},
+		"gpt-5-nano": {
+			"copilot/gpt-5*nano*",
+			"openai/gpt-5*nano*",
+		},
 		"gpt-5-codex": {
 			"copilot/gpt-5*codex*",
 			"openai/gpt-5*codex*",
+		},
+		"reasoning": {
+			"copilot/o1*",
+			"copilot/o3*",
+			"copilot/o4*",
+			"openai/o1*",
+			"openai/o3*",
+			"openai/o4*",
 		},
 		// ── Google ───────────────────────────────────────────────────────────
 		"gemini-flash": {
@@ -89,16 +103,17 @@ func BuiltinModelAliases() map[string][]string {
 		},
 		// ── Meta-aliases ─────────────────────────────────────────────────────
 		// These reference other aliases; AWF resolves them recursively.
-		// "small" — same as "mini" (convenience alias for lightweight/fast models).
-		// "mini"  — lightweight/fast models across all supported vendors.
-		// "large" — full-capability models across all supported vendors.
-		// "auto"  — convenience alias that resolves to the "large" tier.
+		// "small"     — same as "mini" (convenience alias for lightweight/fast models).
+		// "mini"      — lightweight/fast models across all supported vendors.
+		// "large"     — full-capability models across all supported vendors.
+		// "auto"      — convenience alias that resolves to the "large" tier.
 		"small": {
 			"mini",
 		},
 		"mini": {
 			"haiku",
 			"gpt-5-mini",
+			"gpt-5-nano",
 			"gemini-flash",
 		},
 		"large": {
