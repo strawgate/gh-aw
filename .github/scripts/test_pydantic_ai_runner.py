@@ -95,7 +95,7 @@ def test_prompt_falls_back_to_env(tmp_path, monkeypatch):
 
 
 def test_model_defaults_to_anthropic(monkeypatch):
-    for v in ("GH_AW_HARNESS_MODEL", "GH_AW_MODEL_AGENT_CLAUDE", "ANTHROPIC_MODEL", "OPENAI_BASE_URL"):
+    for v in ("GH_AW_HARNESS_MODEL", "GH_AW_MODEL_AGENT_CLAUDE", "ANTHROPIC_MODEL", "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"):
         monkeypatch.delenv(v, raising=False)
     args, _ = har.parse_args(["--print"])
     model, label = har.build_model(args)
@@ -116,6 +116,19 @@ def test_openai_base_url_triggers_openai_compatible(monkeypatch):
     # An OpenAI-compatible endpoint (CanopyWave/vLLM/Together) with a bare model id.
     monkeypatch.setenv("OPENAI_BASE_URL", "https://inference.canopywave.io/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("GH_AW_HARNESS_MODEL", "moonshotai/kimi-k2.6")
+    args, _ = har.parse_args(["--print"])
+    model, label = har.build_model(args)
+    assert label == "openai-compatible:moonshotai/kimi-k2.6"
+    assert model.__class__.__name__ in ("OpenAIChatModel", "OpenAIModel")
+
+
+def test_anthropic_base_url_treated_as_openai_compatible(monkeypatch):
+    # Under the gh-aw claude engine the custom endpoint arrives as
+    # ANTHROPIC_BASE_URL and the key is proxy-injected (no *_API_KEY in env).
+    for v in ("OPENAI_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GH_AW_HARNESS_API_KEY"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://inference.canopywave.io/v1")
     monkeypatch.setenv("GH_AW_HARNESS_MODEL", "moonshotai/kimi-k2.6")
     args, _ = har.parse_args(["--print"])
     model, label = har.build_model(args)
