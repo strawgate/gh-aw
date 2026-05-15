@@ -45,6 +45,15 @@ safe-outputs:
 timeout-minutes: 15
 imports:
   - shared/otel-logfire.md
+pre-steps:
+  # Setting engine.command makes gh-aw skip ALL engine installation steps
+  # (claude_engine.go GetInstallationSteps returns []), which also drops the
+  # bundled AWF firewall binary install — so the agent step's `sudo -E awf`
+  # fails with "awf: command not found". Re-run gh-aw's own installer (the
+  # exact call gh-aw makes for non-custom-command jobs). The helper is staged
+  # by the preceding "Setup Scripts" step and needs no repo checkout.
+  - name: Install AWF firewall binary (skipped by custom engine.command)
+    run: bash "${RUNNER_TEMP}/gh-aw/actions/install_awf_binary.sh" v0.25.46
 ---
 
 # Pydantic AI Harness PR Self-Test
