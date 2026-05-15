@@ -26,10 +26,10 @@ runtimes:
 engine:
   id: claude
   # gh-aw checks out the repo and (via runtimes.uv) installs uv after
-  # checkout, both before the agent step. The harness script is a PEP 723
-  # `uv run --script` executable; run it from the workspace directly — no
-  # pre-step install hack needed.
-  command: .github/scripts/pydantic-ai-runner
+  # checkout, both before the agent step. Use the committed launcher: it
+  # locates uv robustly inside the firewall sandbox (where PATH is rebuilt)
+  # and emits diagnostics so any startup failure is visible in the log.
+  command: .github/scripts/pydantic-ai-runner-launch
   env:
     ANTHROPIC_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
     ANTHROPIC_API_KEY: ${{ secrets.OPENAI_API_KEY }}
