@@ -12,6 +12,8 @@ tools:
 safe-outputs:
   noop:
 timeout-minutes: 10
+imports:
+  - shared/otel-logfire.md
 
 jobs:
   fetch_dynamic_prompt:
