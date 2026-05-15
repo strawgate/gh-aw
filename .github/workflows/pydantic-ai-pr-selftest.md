@@ -21,9 +21,15 @@ network: defaults
 # the agent container). We map the CanopyWave OpenAI-compatible secret/vars
 # onto those names. The harness treats ANTHROPIC_BASE_URL as the
 # OpenAI-compatible base URL (CanopyWave speaks the OpenAI protocol).
+runtimes:
+  uv: {}
 engine:
   id: claude
-  command: /tmp/gh-aw/bin/pydantic-ai-runner
+  # gh-aw checks out the repo and (via runtimes.uv) installs uv after
+  # checkout, both before the agent step. The harness script is a PEP 723
+  # `uv run --script` executable; run it from the workspace directly — no
+  # pre-step install hack needed.
+  command: .github/scripts/pydantic-ai-runner
   env:
     ANTHROPIC_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
     ANTHROPIC_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -39,23 +45,6 @@ safe-outputs:
 timeout-minutes: 15
 imports:
   - shared/otel-logfire.md
-pre-steps:
-  - name: Install uv and stage the Pydantic AI harness runner
-    run: |
-      set -euo pipefail
-      # gh-aw runs pre-steps after setup but BEFORE the repo checkout, so the
-      # harness script is not on disk yet. Install a standalone uv into the
-      # sandbox-mounted bin dir and stage a wrapper that execs the checked-out
-      # script at agent runtime (by then the PR checkout has happened).
-      mkdir -p /tmp/gh-aw/bin
-      curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/tmp/gh-aw/bin UV_NO_MODIFY_PATH=1 sh
-      cat > /tmp/gh-aw/bin/pydantic-ai-runner <<'WRAP'
-      #!/usr/bin/env bash
-      set -euo pipefail
-      exec /tmp/gh-aw/bin/uv run --script "${GITHUB_WORKSPACE}/.github/scripts/pydantic-ai-runner" "$@"
-      WRAP
-      chmod +x /tmp/gh-aw/bin/pydantic-ai-runner
-      /tmp/gh-aw/bin/uv --version
 ---
 
 # Pydantic AI Harness PR Self-Test
