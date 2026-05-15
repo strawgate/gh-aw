@@ -97,7 +97,14 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
     if ":" in raw:
         provider, _, model_name = raw.partition(":")
 
-    base_url = os.environ.get("OPENAI_BASE_URL")
+    # When registered as the gh-aw `claude` engine with an overridden command,
+    # gh-aw provides the custom endpoint via ANTHROPIC_BASE_URL and injects the
+    # credential through the AWF api-proxy (so ANTHROPIC_API_KEY is excluded
+    # from this container). CanopyWave speaks the OpenAI protocol, so treat
+    # ANTHROPIC_BASE_URL as an OpenAI-compatible base URL.
+    base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get(
+        "ANTHROPIC_BASE_URL"
+    )
     if provider == "openai" or (base_url and provider in (None, "openai")):
         from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -109,15 +116,14 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
         prov_kwargs: dict[str, Any] = {}
         if base_url:
             prov_kwargs["base_url"] = base_url
-        # gh-aw strips/excludes env vars it recognizes as provider secrets
-        # (e.g. OPENAI_API_KEY) so a bring-your-own `command` harness never
-        # sees them. GH_AW_HARNESS_API_KEY is an unrecognized name that
-        # survives to the agent container. Fall back to OPENAI_API_KEY for
-        # local runs; "proxy" placeholder lets the SDK proceed when the AWF
-        # api-proxy injects the real credential.
+        # Under the gh-aw claude engine the real key is injected by the AWF
+        # api-proxy and ANTHROPIC_API_KEY/OPENAI_API_KEY are excluded from this
+        # container, so the placeholder lets the SDK proceed. For local runs
+        # any of these env vars supplies the real key directly.
         api_key = (
             os.environ.get("GH_AW_HARNESS_API_KEY")
             or os.environ.get("OPENAI_API_KEY")
+            or os.environ.get("ANTHROPIC_API_KEY")
             or "gh-aw-proxy-injected"
         )
         prov_kwargs["api_key"] = api_key

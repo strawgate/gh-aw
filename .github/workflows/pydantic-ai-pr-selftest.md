@@ -13,22 +13,20 @@ permissions:
   contents: read
   pull-requests: read
 network: defaults
-# KNOWN LIMITATION (verified against the compiled lock): gh-aw strips every
-# ${{ secrets.* }} reference out of engine.env and adds --exclude-env for it,
-# even under strict:false. A bring-your-own `command` harness has no registered
-# provider, so the AWF api-proxy has no secret->provider binding to inject
-# (that binding is created by built-in engine registration in gh-aw Go code,
-# and `provider:` cannot coexist with `command:`). Result: the model
-# credential reaches neither the agent container nor the proxy. This workflow
-# therefore cannot authenticate to CanopyWave until a built-in `pydantic-ai`
-# engine is registered in gh-aw. It is kept as a documented reproduction.
-strict: false
+# We register as the built-in `claude` engine and only override `command`, so
+# gh-aw runs its full Claude proxy + credential-injection machinery for us.
+# Per the gh-aw auth docs, a custom Anthropic-compatible endpoint is supported
+# by setting ANTHROPIC_BASE_URL in engine.env; ANTHROPIC_API_KEY is the
+# engine's own provider secret (injected by the AWF api-proxy, excluded from
+# the agent container). We map the CanopyWave OpenAI-compatible secret/vars
+# onto those names. The harness treats ANTHROPIC_BASE_URL as the
+# OpenAI-compatible base URL (CanopyWave speaks the OpenAI protocol).
 engine:
   id: claude
   command: /tmp/gh-aw/bin/pydantic-ai-runner
   env:
-    OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
-    GH_AW_HARNESS_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    ANTHROPIC_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+    ANTHROPIC_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     GH_AW_HARNESS_MODEL: ${{ vars.GH_AW_HARNESS_MODEL }}
 tools:
   github:
