@@ -12,7 +12,13 @@ on:
 permissions:
   contents: read
   pull-requests: read
-network: defaults
+network:
+  allowed:
+    - defaults
+    # CanopyWave host comes from the ${{ vars.OPENAI_BASE_URL }} expression,
+    # which gh-aw cannot resolve into the compile-time firewall allowlist, so
+    # it must be listed explicitly (not a secret; it already appears in logs).
+    - inference.canopywave.io
 # We register as the built-in `claude` engine and only override `command`, so
 # gh-aw runs its full Claude proxy + credential-injection machinery for us.
 # Per the gh-aw auth docs, a custom Anthropic-compatible endpoint is supported
@@ -25,11 +31,11 @@ runtimes:
   uv: {}
 engine:
   id: claude
-  # gh-aw checks out the repo and (via runtimes.uv) installs uv after
-  # checkout, both before the agent step. Use the committed launcher: it
-  # locates uv robustly inside the firewall sandbox (where PATH is rebuilt)
-  # and emits diagnostics so any startup failure is visible in the log.
-  command: .github/scripts/pydantic-ai-runner-launch
+  # The checked-out workspace is mounted no-exec in the AWF sandbox (spawning
+  # a repo script gives EACCES). gh-aw's exec-able convention is /tmp/gh-aw/bin
+  # — a pre-step stages a launcher there that runs `uv run --script` against
+  # the workspace harness (uv READS the file, so no-exec/exec-bit is moot).
+  command: /tmp/gh-aw/bin/pydantic-ai-runner-launch
   env:
     ANTHROPIC_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
     ANTHROPIC_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -54,6 +60,36 @@ pre-steps:
   # by the preceding "Setup Scripts" step and needs no repo checkout.
   - name: Install AWF firewall binary (skipped by custom engine.command)
     run: bash "${RUNNER_TEMP}/gh-aw/actions/install_awf_binary.sh" v0.25.46
+  # Stage (not install) a launcher at gh-aw's exec-able /tmp/gh-aw/bin path.
+  # uv itself is installed by runtimes.uv; this only writes a wrapper file.
+  # It runs `uv run --script` on the workspace harness at agent time, after
+  # gh-aw's checkout, so the no-exec workspace mount is not a problem.
+  - name: Stage Pydantic AI harness launcher
+    run: |
+      set -euo pipefail
+      mkdir -p /tmp/gh-aw/bin
+      cat > /tmp/gh-aw/bin/pydantic-ai-runner-launch <<'WRAP'
+      #!/usr/bin/env bash
+      set -euo pipefail
+      runner="${GITHUB_WORKSPACE}/.github/scripts/pydantic-ai-runner"
+      echo "[harness-launch] cwd=$(pwd) GITHUB_WORKSPACE=${GITHUB_WORKSPACE:-unset}" >&2
+      echo "[harness-launch] runner=${runner} exists=$([ -f "${runner}" ] && echo yes || echo no)" >&2
+      uv_bin=""
+      if command -v uv >/dev/null 2>&1; then
+        uv_bin="$(command -v uv)"
+      else
+        for c in "${HOME}/.local/bin/uv" "${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"/uv/*/*/uv /opt/hostedtoolcache/uv/*/*/uv /home/runner/work/_tool/uv/*/*/uv /usr/local/bin/uv; do
+          [ -x "$c" ] && uv_bin="$c" && break
+        done
+      fi
+      if [ -z "${uv_bin}" ]; then
+        echo "[harness-launch] FATAL: uv not found; PATH=${PATH}" >&2
+        exit 127
+      fi
+      echo "[harness-launch] using uv=${uv_bin}" >&2
+      exec "${uv_bin}" run --script "${runner}" "$@"
+      WRAP
+      chmod +x /tmp/gh-aw/bin/pydantic-ai-runner-launch
 ---
 
 # Pydantic AI Harness PR Self-Test
