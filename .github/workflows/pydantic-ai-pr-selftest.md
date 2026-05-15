@@ -40,18 +40,22 @@ timeout-minutes: 15
 imports:
   - shared/otel-logfire.md
 pre-steps:
-  - name: Install uv and the Pydantic AI harness runner
+  - name: Install uv and stage the Pydantic AI harness runner
     run: |
       set -euo pipefail
-      python3 -m pip install --quiet --upgrade uv
+      # gh-aw runs pre-steps after setup but BEFORE the repo checkout, so the
+      # harness script is not on disk yet. Install a standalone uv into the
+      # sandbox-mounted bin dir and stage a wrapper that execs the checked-out
+      # script at agent runtime (by then the PR checkout has happened).
       mkdir -p /tmp/gh-aw/bin
-      install -m 0755 "${GITHUB_WORKSPACE}/.github/scripts/pydantic-ai-runner" /tmp/gh-aw/bin/pydantic-ai-runner
-      uv --version
-  - name: Run harness unit tests (offline)
-    run: |
+      curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/tmp/gh-aw/bin UV_NO_MODIFY_PATH=1 sh
+      cat > /tmp/gh-aw/bin/pydantic-ai-runner <<'WRAP'
+      #!/usr/bin/env bash
       set -euo pipefail
-      uv run --with pytest --with "pydantic-ai-slim[openai,mcp]>=1.95.1" \
-        pytest "${GITHUB_WORKSPACE}/.github/scripts/test_pydantic_ai_runner.py" -q
+      exec /tmp/gh-aw/bin/uv run --script "${GITHUB_WORKSPACE}/.github/scripts/pydantic-ai-runner" "$@"
+      WRAP
+      chmod +x /tmp/gh-aw/bin/pydantic-ai-runner
+      /tmp/gh-aw/bin/uv --version
 ---
 
 # Pydantic AI Harness PR Self-Test
