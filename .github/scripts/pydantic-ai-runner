@@ -109,8 +109,18 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
         prov_kwargs: dict[str, Any] = {}
         if base_url:
             prov_kwargs["base_url"] = base_url
-        if os.environ.get("OPENAI_API_KEY"):
-            prov_kwargs["api_key"] = os.environ["OPENAI_API_KEY"]
+        # gh-aw strips/excludes env vars it recognizes as provider secrets
+        # (e.g. OPENAI_API_KEY) so a bring-your-own `command` harness never
+        # sees them. GH_AW_HARNESS_API_KEY is an unrecognized name that
+        # survives to the agent container. Fall back to OPENAI_API_KEY for
+        # local runs; "proxy" placeholder lets the SDK proceed when the AWF
+        # api-proxy injects the real credential.
+        api_key = (
+            os.environ.get("GH_AW_HARNESS_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or "gh-aw-proxy-injected"
+        )
+        prov_kwargs["api_key"] = api_key
         label = f"openai-compatible:{model_name}"
         return _OpenAI(model_name, provider=OpenAIProvider(**prov_kwargs)), label
 
