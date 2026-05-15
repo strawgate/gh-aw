@@ -79,15 +79,45 @@ def resolve_prompt(args: argparse.Namespace, extra_positionals: list[str]) -> st
     return ""
 
 
-def resolve_model(args: argparse.Namespace) -> str:
+def build_model(args: argparse.Namespace) -> tuple[Any, str]:
+    """Return (model, label). gh-aw passes Claude-style model env, but the
+    harness also supports any OpenAI-compatible endpoint (e.g. CanopyWave,
+    vLLM, Together) when OPENAI_BASE_URL is set or the model id is prefixed
+    `openai:`. Returns a model string for native Anthropic, or an explicit
+    OpenAI-compatible model object otherwise."""
     raw = (
         args.model
+        or os.environ.get("GH_AW_HARNESS_MODEL")
         or os.environ.get("GH_AW_MODEL_AGENT_CLAUDE")
         or os.environ.get("ANTHROPIC_MODEL")
         or "claude-sonnet-4-5"
     )
-    # pydantic-ai uses provider-prefixed model ids.
-    return raw if ":" in raw else f"anthropic:{raw}"
+    provider: str | None = None
+    model_name = raw
+    if ":" in raw:
+        provider, _, model_name = raw.partition(":")
+
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    if provider == "openai" or (base_url and provider in (None, "openai")):
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        try:
+            from pydantic_ai.models.openai import OpenAIChatModel as _OpenAI
+        except ImportError:  # older pydantic-ai
+            from pydantic_ai.models.openai import OpenAIModel as _OpenAI
+
+        prov_kwargs: dict[str, Any] = {}
+        if base_url:
+            prov_kwargs["base_url"] = base_url
+        if os.environ.get("OPENAI_API_KEY"):
+            prov_kwargs["api_key"] = os.environ["OPENAI_API_KEY"]
+        label = f"openai-compatible:{model_name}"
+        return _OpenAI(model_name, provider=OpenAIProvider(**prov_kwargs)), label
+
+    # Native Anthropic (Claude-style env + ANTHROPIC_API_KEY).
+    return (raw if ":" in raw else f"anthropic:{model_name}"), (
+        raw if ":" in raw else f"anthropic:{model_name}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -212,7 +242,9 @@ def emit_result(text: str, usage: Any, session_id: str, is_error: bool = False) 
     )
 
 
-async def run(prompt: str, model: str, mcp_servers: list[Any], session_id: str) -> int:
+async def run(
+    prompt: str, model: Any, model_label: str, mcp_servers: list[Any], session_id: str
+) -> int:
     from pydantic_ai import Agent
 
     # PROTOTYPE: pydantic-ai-harness exposes capability bundles, but its public
@@ -236,7 +268,7 @@ async def run(prompt: str, model: str, mcp_servers: list[Any], session_id: str) 
         # Older/newer signature without `capabilities` kwarg.
         agent = Agent(model, toolsets=mcp_servers or None)
 
-    emit({"type": "system", "subtype": "init", "session_id": session_id, "model": model})
+    emit({"type": "system", "subtype": "init", "session_id": session_id, "model": model_label})
 
     try:
         if mcp_servers:
@@ -252,7 +284,12 @@ async def run(prompt: str, model: str, mcp_servers: list[Any], session_id: str) 
     text = str(getattr(result, "output", "") or "")
     emit({"type": "assistant", "message": {"role": "assistant", "content": text}})
     try:
-        usage = result.usage()
+        usage = getattr(result, "usage", None)
+        # Newer pydantic-ai exposes `usage` as a property returning a usage
+        # object; older versions exposed it as a method. Only call it if it
+        # is not already a usage-like object (avoids a deprecation warning).
+        if callable(usage) and not hasattr(usage, "output_tokens"):
+            usage = usage()
     except Exception:  # noqa: BLE001
         usage = None
     emit_result(text, usage, session_id)
@@ -267,12 +304,12 @@ def main() -> int:
         log("empty prompt — nothing to do")
         emit_result("empty prompt", usage=None, session_id="none", is_error=True)
         return 1
-    model = resolve_model(args)
+    model, model_label = build_model(args)
     session_id = os.environ.get("GITHUB_RUN_ID", "") + "-" + uuid.uuid4().hex[:8]
     mcp_servers = build_mcp_servers(args.mcp_config)
-    log(f"model={model} mcp_servers={len(mcp_servers)} prompt_chars={len(prompt)}")
+    log(f"model={model_label} mcp_servers={len(mcp_servers)} prompt_chars={len(prompt)}")
     started = time.time()
-    rc = asyncio.run(run(prompt, model, mcp_servers, session_id))
+    rc = asyncio.run(run(prompt, model, model_label, mcp_servers, session_id))
     log(f"done in {time.time() - started:.1f}s rc={rc}")
     return rc
 
