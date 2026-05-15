@@ -71,8 +71,17 @@ pre-steps:
       cat > /tmp/gh-aw/bin/pydantic-ai-runner-launch <<'WRAP'
       #!/usr/bin/env bash
       set -euo pipefail
+      # setup-uv points UV_CACHE_DIR at ${RUNNER_TEMP}/setup-uv-cache, which is
+      # not writable by the chrooted sandbox user (UID 1001). Only /tmp/gh-aw
+      # is owned by that user, so redirect every uv-writable dir there.
+      export UV_CACHE_DIR=/tmp/gh-aw/uv/cache
+      export UV_PYTHON_INSTALL_DIR=/tmp/gh-aw/uv/python
+      export UV_TOOL_DIR=/tmp/gh-aw/uv/tool
+      export XDG_DATA_HOME=/tmp/gh-aw/uv/data
+      export XDG_CACHE_HOME=/tmp/gh-aw/uv/xdg-cache
+      mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$UV_TOOL_DIR" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
       runner="${GITHUB_WORKSPACE}/.github/scripts/pydantic-ai-runner"
-      echo "[harness-launch] cwd=$(pwd) GITHUB_WORKSPACE=${GITHUB_WORKSPACE:-unset}" >&2
+      echo "[harness-launch] cwd=$(pwd) GITHUB_WORKSPACE=${GITHUB_WORKSPACE:-unset} UV_CACHE_DIR=${UV_CACHE_DIR}" >&2
       echo "[harness-launch] runner=${runner} exists=$([ -f "${runner}" ] && echo yes || echo no)" >&2
       uv_bin=""
       if command -v uv >/dev/null 2>&1; then
