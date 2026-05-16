@@ -26,6 +26,10 @@ import argparse
 import asyncio
 import json
 import os
+import pathlib
+import re
+import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -213,6 +217,126 @@ def build_mcp_servers(args: Args) -> list[Any]:
     return servers
 
 
+# --------------------------------------------------------------------------- #
+# Native agent tools. pydantic-ai-harness does not yet ship filesystem/shell
+# tools (only CodeMode), and the Claude-CLI Bash/Read/Edit tools are not gh-aw
+# MCP tools — so the harness provides a small idiomatic toolset. pydantic-ai
+# drives the multi-step tool loop automatically. Everything is workspace-scoped
+# and runs inside the AWF firewall sandbox.
+# --------------------------------------------------------------------------- #
+MAX_TOOL_OUTPUT = 16000
+WORKSPACE = os.environ.get("GITHUB_WORKSPACE") or os.getcwd()
+
+
+def _clip(text: str) -> str:
+    if len(text) <= MAX_TOOL_OUTPUT:
+        return text
+    return text[:MAX_TOOL_OUTPUT] + f"\n…[truncated {len(text) - MAX_TOOL_OUTPUT} chars]"
+
+
+def _resolve(path: str) -> pathlib.Path:
+    p = pathlib.Path(path)
+    return p if p.is_absolute() else pathlib.Path(WORKSPACE) / p
+
+
+def bash(command: str) -> str:
+    """Run a shell command in the repository workspace and return combined
+    stdout+stderr (truncated). 120s timeout."""
+    try:
+        r = subprocess.run(
+            command, shell=True, cwd=WORKSPACE, capture_output=True, text=True, timeout=120
+        )
+        return _clip(f"exit={r.returncode}\n{r.stdout}{r.stderr}")
+    except subprocess.TimeoutExpired:
+        return "error: command timed out after 120s"
+
+
+def read_file(path: str) -> str:
+    """Read a UTF-8 text file. Relative paths resolve under the workspace."""
+    try:
+        return _clip(_resolve(path).read_text(encoding="utf-8", errors="replace"))
+    except OSError as exc:
+        return f"error: {exc}"
+
+
+def write_file(path: str, content: str) -> str:
+    """Create or overwrite a UTF-8 text file under the workspace."""
+    try:
+        p = _resolve(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        return f"wrote {len(content)} chars to {p}"
+    except OSError as exc:
+        return f"error: {exc}"
+
+
+def edit_file(path: str, old: str, new: str) -> str:
+    """Replace the first exact occurrence of `old` with `new` in a workspace file."""
+    try:
+        p = _resolve(path)
+        text = p.read_text(encoding="utf-8")
+        if old not in text:
+            return "error: `old` text not found"
+        p.write_text(text.replace(old, new, 1), encoding="utf-8")
+        return f"edited {p}"
+    except OSError as exc:
+        return f"error: {exc}"
+
+
+def list_dir(path: str = ".") -> str:
+    """List the entries of a workspace directory (dirs marked with a trailing /)."""
+    try:
+        p = _resolve(path)
+        return _clip(
+            "\n".join(
+                sorted(e.name + ("/" if e.is_dir() else "") for e in p.iterdir())
+            )
+            or "(empty)"
+        )
+    except OSError as exc:
+        return f"error: {exc}"
+
+
+def grep(pattern: str, path: str = ".") -> str:
+    """Recursively search a regex across workspace files (ripgrep if available,
+    else a Python fallback). Returns file:line:text matches (capped)."""
+    base = _resolve(path)
+    rg = shutil.which("rg")
+    if rg:
+        try:
+            r = subprocess.run(
+                [rg, "-n", "--no-heading", "-e", pattern, str(base)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            return _clip(r.stdout or "(no matches)")
+        except subprocess.TimeoutExpired:
+            return "error: grep timed out"
+    try:
+        rx = re.compile(pattern)
+    except re.error as exc:
+        return f"error: bad regex: {exc}"
+    out: list[str] = []
+    for f in base.rglob("*"):
+        if not f.is_file():
+            continue
+        try:
+            for i, ln in enumerate(
+                f.read_text(encoding="utf-8", errors="ignore").splitlines(), 1
+            ):
+                if rx.search(ln):
+                    out.append(f"{f}:{i}:{ln}")
+                    if len(out) >= 500:
+                        return _clip("\n".join(out))
+        except OSError:
+            continue
+    return _clip("\n".join(out) or "(no matches)")
+
+
+NATIVE_TOOLS = [bash, read_file, write_file, edit_file, list_dir, grep]
+
+
 def emit(obj: dict[str, Any]) -> None:
     """Write one Claude-style stream-json line to stdout."""
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -325,7 +449,7 @@ def log_safe_outputs_state() -> None:
 
 
 async def run(prompt: str, model: Any, label: str, mcp_servers: list[Any], session_id: str) -> int:
-    agent = Agent(model, toolsets=mcp_servers or None)
+    agent = Agent(model, tools=NATIVE_TOOLS, toolsets=mcp_servers or None)
     emit({"type": "system", "subtype": "init", "session_id": session_id, "model": label})
 
     try:

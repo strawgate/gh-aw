@@ -169,6 +169,32 @@ def test_mcp_translates_stdio_and_http(tmp_path):
     assert names == ["MCPServerStdio", "MCPServerStreamableHTTP"]
 
 
+def test_native_tools_registered():
+    names = [t.__name__ for t in har.NATIVE_TOOLS]
+    assert names == ["bash", "read_file", "write_file", "edit_file", "list_dir", "grep"]
+
+
+def test_native_file_tools_roundtrip(tmp_path):
+    f = tmp_path / "sub" / "note.txt"
+    assert "wrote" in har.write_file(str(f), "hello\nworld\n")
+    assert har.read_file(str(f)) == "hello\nworld\n"
+    assert "edited" in har.edit_file(str(f), "world", "there")
+    assert "there" in har.read_file(str(f))
+    assert "note.txt" in har.list_dir(str(tmp_path / "sub"))
+    assert "error: `old` text not found" == har.edit_file(str(f), "absent", "x")
+
+
+def test_native_bash_tool(tmp_path):
+    out = har.bash("echo hello-from-bash")
+    assert "exit=0" in out and "hello-from-bash" in out
+
+
+def test_native_grep_tool(tmp_path):
+    (tmp_path / "a.txt").write_text("alpha\nNEEDLE here\n", encoding="utf-8")
+    res = har.grep("NEEDLE", str(tmp_path))
+    assert "NEEDLE here" in res
+
+
 def test_emit_result_matches_claude_stream_json_schema():
     buf = io.StringIO()
     with redirect_stdout(buf):

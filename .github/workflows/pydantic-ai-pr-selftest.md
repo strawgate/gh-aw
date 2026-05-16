@@ -104,17 +104,26 @@ pre-steps:
 # Pydantic AI Harness PR Self-Test
 
 You are running under the **Pydantic AI harness engine** (not the Claude Code
-CLI), backed by an OpenAI-compatible CanopyWave endpoint. This workflow exists
-so we can iterate on the harness against a real PR and read the job log.
+CLI), backed by the configured custom Anthropic-compatible endpoint. This
+workflow verifies, on a real PR, that the harness supports a multi-step agent
+loop with native tools (bash/read/grep/...) plus gh-aw safe-outputs.
 
 ## Task
 
-Do exactly the following, concisely:
+Work step by step, using your tools (do not guess — actually call them):
 
-1. Print a clearly recognizable banner line: `PYDANTIC_AI_HARNESS_SELFTEST_OK`.
-2. State the repository (`${{ github.repository }}`) and the model you are running on.
-3. Use a GitHub tool to fetch the title of this pull request and quote it back.
-4. Post one short PR comment confirming the harness ran end-to-end, including
-   the banner and the model name.
+1. Print a recognizable banner line: `PYDANTIC_AI_HARNESS_SELFTEST_OK`.
+2. State the repository (`${{ github.repository }}`).
+3. Use the `bash` tool to count workflow files:
+   `ls .github/workflows/*.md | wc -l`. Report the number.
+4. Use the `grep` tool to find the line in `.github/scripts/pydantic-ai-runner`
+   that defines `NATIVE_TOOLS` and quote it.
+5. Use the `read_file` tool to read the first 5 lines of `go.mod` and quote the
+   `module` line.
+6. Use a GitHub tool to fetch this pull request's title and quote it back.
+7. Post **one** short PR comment summarizing the above (banner, repo, the
+   workflow count, the PR title) so the safe-outputs write path is exercised
+   end-to-end.
 
-Keep total output under ~200 words. Do not modify any files.
+Keep the final message under ~250 words. Do not modify any tracked files
+(scratch writes under `/tmp` are fine).
