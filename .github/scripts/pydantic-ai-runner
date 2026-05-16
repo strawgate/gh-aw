@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#   "pydantic-ai-slim[anthropic,mcp]>=1.95.1",
+#   "pydantic-ai-slim[openai,anthropic,mcp]>=1.95.1",
 #   "pydantic-ai-harness",
 #   "logfire",
 # ]
