@@ -79,38 +79,17 @@ def resolve_prompt(args: argparse.Namespace, extra_positionals: list[str]) -> st
     return ""
 
 
-def _awf_proxy_base_url(provider: str) -> str | None:
-    """Return the in-cluster AWF api-proxy base URL for `provider`, or None.
-
-    gh-aw's credential-injecting proxy runs at e.g. http://api-proxy:10001
-    (Anthropic). The agent MUST send requests there — the proxy swaps the
-    ANTHROPIC_AUTH_TOKEN placeholder for the real key and forwards to the
-    configured upstream + base-path. Talking to the upstream directly bypasses
-    credential injection (401) and the base-path rewrite (404). claude_harness
-    writes the endpoint map to awf-reflect.json before invoking us.
-    """
-    path = os.environ.get(
-        "GH_AW_AWF_REFLECT_FILE", "/tmp/gh-aw/sandbox/firewall/awf-reflect.json"
-    )
-    try:
-        with open(path) as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return None
-    for ep in data.get("endpoints", []):
-        if ep.get("provider") == provider and ep.get("configured") and ep.get(
-            "base_url"
-        ):
-            return ep["base_url"]
-    return None
-
-
 def build_model(args: argparse.Namespace) -> tuple[Any, str]:
-    """Return (model, label). gh-aw passes Claude-style model env, but the
-    harness also supports any OpenAI-compatible endpoint (e.g. CanopyWave,
-    vLLM, Together) when OPENAI_BASE_URL is set or the model id is prefixed
-    `openai:`. Returns a model string for native Anthropic, or an explicit
-    OpenAI-compatible model object otherwise."""
+    """Return (model, label).
+
+    Under gh-aw the harness is treated like the stock Claude Code CLI: it is
+    unaware of gh-aw. gh-aw sets ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in
+    the environment and transparently MITM-proxies egress (credential
+    injection / base-path rewrite happen in the firewall, not here). So for the
+    Anthropic path we just let the Anthropic SDK consume the environment
+    natively — no explicit base_url/api_key, no proxy routing. An explicit
+    `openai:` prefix or OPENAI_BASE_URL selects an OpenAI-compatible endpoint
+    (local / non-gh-aw use)."""
     raw = (
         args.model
         or os.environ.get("GH_AW_HARNESS_MODEL")
@@ -123,26 +102,8 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
     if ":" in raw:
         provider, _, model_name = raw.partition(":")
 
-    # When registered as the gh-aw `claude` engine with an overridden command,
-    # gh-aw provides the custom endpoint via ANTHROPIC_BASE_URL and injects the
-    # credential through the AWF api-proxy (Anthropic protocol: it recognizes
-    # the in-container placeholder ANTHROPIC_AUTH_TOKEN on the outgoing request
-    # and swaps in the real key). So under gh-aw we must speak the *Anthropic*
-    # protocol to that base URL. An explicit `openai:` prefix or OPENAI_BASE_URL
-    # selects the OpenAI-compatible path instead (local / non-gh-aw use).
     openai_base = os.environ.get("OPENAI_BASE_URL")
     anthropic_base = os.environ.get("ANTHROPIC_BASE_URL")
-
-    # The AWF api-proxy swaps this placeholder for the real key; a made-up
-    # string is not recognized and the upstream returns 401. Local runs supply
-    # the real key directly via the *_API_KEY env vars.
-    api_key = (
-        os.environ.get("GH_AW_HARNESS_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-        or "gh-aw-proxy-injected"
-    )
 
     use_openai = provider == "openai" or (
         provider != "anthropic" and openai_base is not None and anthropic_base is None
@@ -155,38 +116,34 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
         except ImportError:  # older pydantic-ai
             from pydantic_ai.models.openai import OpenAIModel as _OpenAI
 
+        api_key = (
+            os.environ.get("GH_AW_HARNESS_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or os.environ.get("ANTHROPIC_API_KEY")
+            or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+            or "gh-aw-proxy-injected"
+        )
         prov_kwargs: dict[str, Any] = {"api_key": api_key}
         if openai_base or anthropic_base:
             prov_kwargs["base_url"] = openai_base or anthropic_base
         label = f"openai-compatible:{model_name}"
         return _OpenAI(model_name, provider=OpenAIProvider(**prov_kwargs)), label
 
-    # Anthropic protocol. Under gh-aw, send to the in-cluster api-proxy (which
-    # injects the real key via the placeholder swap and forwards to the
-    # configured upstream + base-path) rather than the upstream directly —
-    # talking to the upstream bypasses credential injection. Fall back to
-    # ANTHROPIC_BASE_URL for local / non-proxied use.
-    if anthropic_base or provider == "anthropic":
-        from pydantic_ai.models.anthropic import AnthropicModel
-        from pydantic_ai.providers.anthropic import AnthropicProvider
-
-        proxy_base = _awf_proxy_base_url("anthropic")
-        client_base = proxy_base or anthropic_base
-        print(
-            f"[pydantic-ai-harness] anthropic base_url={client_base} "
-            f"(proxy={'yes' if proxy_base else 'no'})",
-            file=sys.stderr,
-        )
-        prov_kwargs = {"api_key": api_key}
-        if client_base:
-            prov_kwargs["base_url"] = client_base
-        label = f"anthropic:{model_name}"
-        return AnthropicModel(model_name, provider=AnthropicProvider(**prov_kwargs)), label
-
-    # Native Anthropic (Claude-style env + ANTHROPIC_API_KEY, default base URL).
-    return (raw if ":" in raw else f"anthropic:{model_name}"), (
-        raw if ":" in raw else f"anthropic:{model_name}"
+    # Anthropic path: env-driven, exactly like the stock Claude Code CLI. The
+    # anthropic SDK natively reads ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN
+    # (and ANTHROPIC_API_KEY); gh-aw's transparent firewall proxy handles
+    # credential injection and base-path rewrite. Returning the bare model
+    # string lets pydantic-ai build the default env-driven Anthropic client.
+    has_auth = bool(
+        os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
     )
+    print(
+        f"[pydantic-ai-harness] anthropic env-driven base_url="
+        f"{anthropic_base or '(default)'} auth={'yes' if has_auth else 'no'}",
+        file=sys.stderr,
+    )
+    label = raw if ":" in raw else f"anthropic:{model_name}"
+    return label, label
 
 
 # --------------------------------------------------------------------------- #
