@@ -3,7 +3,6 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "pydantic-ai-slim[openai,anthropic,mcp]>=1.95.1",
-#   "pydantic-ai-harness",
 #   "logfire",
 # ]
 # ///
@@ -14,21 +13,14 @@ gh-aw invokes the agent engine as:
     node claude_harness.cjs <command> --print --no-chrome \\
       --allowed-tools '<csv>' --debug-file <path> --verbose \\
       --permission-mode bypassPermissions --output-format stream-json \\
-      --mcp-config <mcp-servers.json> --prompt-file /tmp/gh-aw/aw-prompts/prompt.txt \\
+      --mcp-config <mcp-servers.json> --prompt-file <prompt.txt> \\
       [--model <model>] "<PROMPT TEXT appended by the harness>"
 
-When `engine.command` is set in workflow frontmatter, `<command>` becomes this
-script. So this CLI must tolerate Claude Code's full argv, recover the prompt,
-talk to gh-aw's MCP gateway (which exposes GitHub tools + the `safeoutputs`
-write-sink), run a model, and emit Claude-compatible stream-json so gh-aw's log
-parser and token accounting keep working.
-
-This is a PROTOTYPE: the pydantic-ai <-> gh-aw bridge is functional for the
-common path (stdio/http MCP servers, single-turn run, stream-json result), but
-several Claude Code behaviours are approximated. Gaps are marked `PROTOTYPE:`.
+With `engine.command` set, `<command>` is this script. It tolerates Claude
+Code's argv, recovers the prompt, bridges gh-aw's MCP servers (GitHub tools +
+the `safeoutputs` write-sink) into pydantic-ai, runs the model, and emits
+Claude-compatible stream-json so gh-aw's log parser and token accounting work.
 """
-
-from __future__ import annotations
 
 import argparse
 import asyncio
@@ -37,7 +29,20 @@ import os
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
+
+import logfire
+from anthropic import AsyncAnthropic
+from pydantic_ai import Agent
+from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
+from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.providers.openai import OpenAIProvider
+
+PROXY_PLACEHOLDER = "gh-aw-proxy-injected"
 
 
 def log(msg: str) -> None:
@@ -45,12 +50,18 @@ def log(msg: str) -> None:
     print(f"[pydantic-ai-harness] {msg}", file=sys.stderr, flush=True)
 
 
-# --------------------------------------------------------------------------- #
-# Argument handling: accept Claude Code's CLI surface, ignore what we don't use
-# --------------------------------------------------------------------------- #
-def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
+@dataclass(slots=True)
+class Args:
+    model: str | None = None
+    mcp_config: str | None = None
+    prompt_file: str | None = None
+    prompt_positional: str | None = None
+
+
+def parse_args(argv: list[str]) -> Args:
+    """Accept Claude Code's CLI surface; keep only what we use, tolerate the rest
+    (so future Claude flags never break the engine)."""
     p = argparse.ArgumentParser(add_help=False)
-    # Flags gh-aw actually sets that we care about:
     p.add_argument("--model")
     p.add_argument("--mcp-config")
     p.add_argument("--prompt-file")
@@ -58,20 +69,23 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     p.add_argument("--allowed-tools")
     p.add_argument("--permission-mode")
     p.add_argument("--debug-file")
-    # Boolean Claude flags we accept-and-ignore for compatibility:
     for flag in ("--print", "--no-chrome", "--verbose", "--continue"):
         p.add_argument(flag, action="store_true")
-    # Everything else (future Claude flags) is tolerated, not fatal:
     known, unknown = p.parse_known_args(argv)
-    return known, unknown
+    # gh-aw appends the rendered prompt as the trailing positional argument.
+    positionals = [a for a in unknown if not a.startswith("-")]
+    return Args(
+        model=known.model,
+        mcp_config=known.mcp_config,
+        prompt_file=known.prompt_file,
+        prompt_positional=positionals[-1] if positionals else None,
+    )
 
 
-def resolve_prompt(args: argparse.Namespace, extra_positionals: list[str]) -> str:
-    """Prompt precedence: trailing positional (harness appends file content) ->
-    --prompt-file -> $GH_AW_PROMPT."""
-    positionals = [a for a in extra_positionals if not a.startswith("-")]
-    if positionals:
-        return positionals[-1]
+def resolve_prompt(args: Args) -> str:
+    """Prompt precedence: trailing positional -> --prompt-file -> $GH_AW_PROMPT."""
+    if args.prompt_positional:
+        return args.prompt_positional
     path = args.prompt_file or os.environ.get("GH_AW_PROMPT")
     if path and os.path.isfile(path):
         with open(path, encoding="utf-8") as fh:
@@ -79,17 +93,19 @@ def resolve_prompt(args: argparse.Namespace, extra_positionals: list[str]) -> st
     return ""
 
 
-def build_model(args: argparse.Namespace) -> tuple[Any, str]:
+def build_model(args: Args) -> tuple[Any, str]:
     """Return (model, label).
 
-    Under gh-aw the harness is treated like the stock Claude Code CLI: it is
-    unaware of gh-aw. gh-aw sets ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in
-    the environment and transparently MITM-proxies egress (credential
-    injection / base-path rewrite happen in the firewall, not here). So for the
-    Anthropic path we just let the Anthropic SDK consume the environment
-    natively — no explicit base_url/api_key, no proxy routing. An explicit
-    `openai:` prefix or OPENAI_BASE_URL selects an OpenAI-compatible endpoint
-    (local / non-gh-aw use)."""
+    Under gh-aw the harness is treated like the stock Claude Code CLI: gh-aw
+    sets ANTHROPIC_BASE_URL (its in-cluster transparent proxy) and
+    ANTHROPIC_AUTH_TOKEN (a placeholder the proxy swaps for the real key), and
+    handles credential injection / base-path rewrite in the firewall. We just
+    speak the Anthropic protocol with a Bearer auth token, exactly like the
+    CLI. pydantic-ai's default AnthropicProvider hard-requires
+    ANTHROPIC_API_KEY and ignores ANTHROPIC_AUTH_TOKEN, so the client is built
+    explicitly. An explicit `openai:` prefix or OPENAI_BASE_URL selects an
+    OpenAI-compatible endpoint instead (local / non-gh-aw use).
+    """
     raw = (
         args.model
         or os.environ.get("GH_AW_HARNESS_MODEL")
@@ -97,86 +113,54 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
         or os.environ.get("ANTHROPIC_MODEL")
         or "claude-sonnet-4-5"
     )
-    provider: str | None = None
-    model_name = raw
-    if ":" in raw:
-        provider, _, model_name = raw.partition(":")
+    provider, _, model_name = raw.partition(":") if ":" in raw else ("", "", raw)
 
     openai_base = os.environ.get("OPENAI_BASE_URL")
     anthropic_base = os.environ.get("ANTHROPIC_BASE_URL")
 
-    use_openai = provider == "openai" or (
+    if provider == "openai" or (
         provider != "anthropic" and openai_base is not None and anthropic_base is None
-    )
-    if use_openai:
-        from pydantic_ai.providers.openai import OpenAIProvider
-
-        try:
-            from pydantic_ai.models.openai import OpenAIChatModel as _OpenAI
-        except ImportError:  # older pydantic-ai
-            from pydantic_ai.models.openai import OpenAIModel as _OpenAI
-
+    ):
         api_key = (
             os.environ.get("GH_AW_HARNESS_API_KEY")
             or os.environ.get("OPENAI_API_KEY")
             or os.environ.get("ANTHROPIC_API_KEY")
             or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-            or "gh-aw-proxy-injected"
+            or PROXY_PLACEHOLDER
         )
-        prov_kwargs: dict[str, Any] = {"api_key": api_key}
-        if openai_base or anthropic_base:
-            prov_kwargs["base_url"] = openai_base or anthropic_base
-        label = f"openai-compatible:{model_name}"
-        return _OpenAI(model_name, provider=OpenAIProvider(**prov_kwargs)), label
-
-    # Anthropic path. gh-aw already points ANTHROPIC_BASE_URL at its in-cluster
-    # transparent proxy and sets ANTHROPIC_AUTH_TOKEN (placeholder, swapped by
-    # the proxy) — exactly the Claude Code CLI contract. pydantic-ai's default
-    # AnthropicProvider, however, hard-requires ANTHROPIC_API_KEY and ignores
-    # ANTHROPIC_AUTH_TOKEN, so build the anthropic client explicitly: Bearer
-    # auth_token (like the CLI) + base_url from the env (the proxy). No routing
-    # or credential logic here — the firewall proxy does injection.
-    from anthropic import AsyncAnthropic
-    from pydantic_ai.models.anthropic import AnthropicModel
-    from pydantic_ai.providers.anthropic import AnthropicProvider
+        base_url = openai_base or anthropic_base
+        log(f"openai-compatible base_url={base_url or '(default)'}")
+        provider_obj = (
+            OpenAIProvider(api_key=api_key, base_url=base_url)
+            if base_url
+            else OpenAIProvider(api_key=api_key)
+        )
+        return OpenAIChatModel(model_name, provider=provider_obj), f"openai-compatible:{model_name}"
 
     auth_token = (
         os.environ.get("ANTHROPIC_AUTH_TOKEN")
         or os.environ.get("ANTHROPIC_API_KEY")
         or os.environ.get("GH_AW_HARNESS_API_KEY")
-        or "gh-aw-proxy-injected"
+        or PROXY_PLACEHOLDER
     )
-    client_kwargs: dict[str, Any] = {"auth_token": auth_token}
-    if anthropic_base:
-        client_kwargs["base_url"] = anthropic_base
-    print(
-        f"[pydantic-ai-harness] anthropic base_url="
-        f"{anthropic_base or '(default)'} auth=token",
-        file=sys.stderr,
+    log(f"anthropic base_url={anthropic_base or '(default)'} auth=token")
+    client = (
+        AsyncAnthropic(auth_token=auth_token, base_url=anthropic_base)
+        if anthropic_base
+        else AsyncAnthropic(auth_token=auth_token)
     )
-    client = AsyncAnthropic(**client_kwargs)
     label = raw if ":" in raw else f"anthropic:{model_name}"
-    return (
-        AnthropicModel(model_name, provider=AnthropicProvider(anthropic_client=client)),
-        label,
-    )
+    return AnthropicModel(model_name, provider=AnthropicProvider(anthropic_client=client)), label
 
 
-# --------------------------------------------------------------------------- #
-# Logfire / OTLP: pydantic-ai is natively instrumented. gh-aw injects OTEL_* and
-# (optionally) LOGFIRE_TOKEN, so traces flow with no extra config.
-# --------------------------------------------------------------------------- #
 def configure_observability() -> None:
-    try:
-        import logfire
-    except ImportError:
-        return
-    has_otlp = bool(
+    """pydantic-ai is natively instrumented; gh-aw injects OTEL_*/LOGFIRE_TOKEN
+    so traces flow with no extra config. Never let observability break the run."""
+    if not (
         os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
         or os.environ.get("GH_AW_OTLP_ENDPOINTS")
         or os.environ.get("LOGFIRE_TOKEN")
-    )
-    if not has_otlp:
+    ):
         return
     try:
         logfire.configure(
@@ -186,78 +170,57 @@ def configure_observability() -> None:
         )
         logfire.instrument_pydantic_ai()
         log("Logfire/OTLP instrumentation enabled")
-    except Exception as exc:  # pragma: no cover - observability must never break the run
+    except Exception as exc:  # noqa: BLE001 - telemetry must never fail the run
         log(f"observability disabled: {exc!r}")
 
 
-# --------------------------------------------------------------------------- #
-# MCP bridge: gh-aw renders a Claude-format mcp-servers.json pointing at its MCP
-# gateway (GitHub tools + the `safeoutputs` write-sink). Translate it into
-# pydantic-ai toolsets so the agent gets the same capabilities and safe-outputs.
-# --------------------------------------------------------------------------- #
-def build_mcp_servers(mcp_config_path: str | None) -> list[Any]:
-    path = mcp_config_path or os.environ.get("GH_AW_MCP_CONFIG")
+def build_mcp_servers(args: Args) -> list[Any]:
+    """gh-aw renders a Claude-format mcp-servers.json pointing at its MCP
+    gateway. Translate stdio/http entries into pydantic-ai MCP toolsets.
+    `container:`-type servers (e.g. the GitHub server) are launched by gh-aw's
+    gateway and reached over its http endpoint, so only stdio/http entries are
+    instantiated here."""
+    path = args.mcp_config or os.environ.get("GH_AW_MCP_CONFIG")
     if not path or not os.path.isfile(path):
         log("no MCP config present — running without external tools")
         return []
-    try:
-        with open(path, encoding="utf-8") as fh:
-            cfg = json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
-        log(f"could not read MCP config {path}: {exc!r}")
-        return []
-
-    try:
-        from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
-    except ImportError as exc:
-        log(f"pydantic-ai MCP support unavailable: {exc!r}")
-        return []
+    with open(path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
 
     servers: list[Any] = []
     for name, spec in (cfg.get("mcpServers") or {}).items():
-        try:
-            stype = spec.get("type")
-            if stype in ("http", "sse") or spec.get("url"):
-                servers.append(
-                    MCPServerStreamableHTTP(
-                        url=spec["url"],
-                        headers=spec.get("headers") or None,
-                        tool_prefix=name,
-                    )
+        if spec.get("type") in ("http", "sse") or spec.get("url"):
+            servers.append(
+                MCPServerStreamableHTTP(
+                    url=spec["url"],
+                    headers=spec.get("headers") or None,
+                    tool_prefix=name,
                 )
-            elif spec.get("command"):
-                servers.append(
-                    MCPServerStdio(
-                        command=spec["command"],
-                        args=spec.get("args", []),
-                        env={**os.environ, **(spec.get("env") or {})},
-                        tool_prefix=name,
-                    )
+            )
+        elif spec.get("command"):
+            servers.append(
+                MCPServerStdio(
+                    command=spec["command"],
+                    args=spec.get("args", []),
+                    env={**os.environ, **(spec.get("env") or {})},
+                    tool_prefix=name,
                 )
-            else:
-                # PROTOTYPE: gh-aw's `container:` MCP servers (e.g. the github
-                # server) are launched by gh-aw's gateway, not by us. They are
-                # reachable via the gateway's http endpoint, so the `safeoutputs`
-                # http entry above is the critical one; container entries are
-                # skipped here intentionally.
-                log(f"skipping unsupported MCP server '{name}' (container-launched by gateway)")
-                continue
-            log(f"registered MCP server '{name}'")
-        except Exception as exc:  # noqa: BLE001 - one bad server shouldn't kill the run
-            log(f"failed to register MCP server '{name}': {exc!r}")
+            )
+        else:
+            log(f"skipping MCP server '{name}' (gateway-launched container)")
+            continue
+        log(f"registered MCP server '{name}'")
     return servers
 
 
-# --------------------------------------------------------------------------- #
-# Claude Code stream-json emitter (gh-aw parses this for logs + token usage)
-# --------------------------------------------------------------------------- #
 def emit(obj: dict[str, Any]) -> None:
+    """Write one Claude-style stream-json line to stdout."""
     sys.stdout.write(json.dumps(obj) + "\n")
     sys.stdout.flush()
 
 
 def emit_result(text: str, usage: Any, session_id: str, is_error: bool = False) -> None:
-    def g(*names: str) -> int:
+    def tok(*names: str) -> int:
         for n in names:
             v = getattr(usage, n, None)
             if isinstance(v, int):
@@ -275,122 +238,35 @@ def emit_result(text: str, usage: Any, session_id: str, is_error: bool = False) 
             "duration_ms": 0,
             "total_cost_usd": 0,
             "usage": {
-                "input_tokens": g("input_tokens", "request_tokens"),
-                "output_tokens": g("output_tokens", "response_tokens"),
-                "cache_creation_input_tokens": g("cache_write_tokens", "cache_creation_input_tokens"),
-                "cache_read_input_tokens": g("cache_read_tokens", "cache_read_input_tokens"),
+                "input_tokens": tok("input_tokens", "request_tokens"),
+                "output_tokens": tok("output_tokens", "response_tokens"),
+                "cache_creation_input_tokens": tok("cache_write_tokens", "cache_creation_input_tokens"),
+                "cache_read_input_tokens": tok("cache_read_tokens", "cache_read_input_tokens"),
             },
         }
     )
 
 
-async def run(
-    prompt: str, model: Any, model_label: str, mcp_servers: list[Any], session_id: str
-) -> int:
-    from pydantic_ai import Agent
-
-    # PROTOTYPE: pydantic-ai-harness exposes capability bundles, but its public
-    # API for attaching them is still settling. We attach them best-effort and
-    # fall back to a plain pydantic-ai Agent + the gh-aw MCP toolsets (which is
-    # what actually delivers GitHub tools + safe-outputs).
-    harness_kwargs: dict[str, Any] = {}
-    try:
-        import pydantic_ai_harness as pah  # noqa: F401
-
-        capabilities = getattr(pah, "default_capabilities", None)
-        if callable(capabilities):
-            harness_kwargs["capabilities"] = capabilities()
-            log("pydantic-ai-harness capabilities attached")
-    except Exception as exc:  # noqa: BLE001
-        log(f"pydantic-ai-harness not attached ({exc!r}); using plain agent + MCP")
-
-    try:
-        agent = Agent(model, toolsets=mcp_servers or None, **harness_kwargs)
-    except TypeError:
-        # Older/newer signature without `capabilities` kwarg.
-        agent = Agent(model, toolsets=mcp_servers or None)
-
-    emit({"type": "system", "subtype": "init", "session_id": session_id, "model": model_label})
-
-    try:
-        if mcp_servers:
-            async with agent:
-                await _log_mcp_tools(mcp_servers)
-                result = await agent.run(prompt)
-        else:
-            result = await agent.run(prompt)
-    except Exception as exc:  # noqa: BLE001 - surface as a Claude-style error result
-        log(f"agent run failed: {exc!r}")
-        emit_result(f"agent run failed: {exc}", usage=None, session_id=session_id, is_error=True)
-        return 1
-
-    # Surface tool activity as Claude-style stream-json so gh-aw's log parser
-    # shows it and we can see whether the agent actually drove safe-outputs.
-    _emit_tool_activity(result)
-
-    text = str(getattr(result, "output", "") or "")
-    emit({"type": "assistant", "message": {"role": "assistant", "content": text}})
-    try:
-        usage = getattr(result, "usage", None)
-        # Newer pydantic-ai exposes `usage` as a property returning a usage
-        # object; older versions exposed it as a method. Only call it if it
-        # is not already a usage-like object (avoids a deprecation warning).
-        if callable(usage) and not hasattr(usage, "output_tokens"):
-            usage = usage()
-    except Exception:  # noqa: BLE001
-        usage = None
-    emit_result(text, usage, session_id)
-    _log_safe_outputs_state()
-    return 0
-
-
-async def _log_mcp_tools(mcp_servers: list[Any]) -> None:
-    """Best-effort: log the tool names each connected MCP server exposes, so a
-    missing/renamed safe-outputs tool is obvious in the log."""
-    import inspect
-
+async def log_mcp_tools(mcp_servers: list[Any]) -> None:
+    """Log the tool names each connected MCP server exposes, so a missing or
+    renamed safe-outputs tool is immediately visible."""
     for server in mcp_servers:
         prefix = getattr(server, "tool_prefix", "?")
-        names: list[str] | str = "<no list_tools api>"
-        for attr in ("list_tools", "get_tools"):
-            fn = getattr(server, attr, None)
-            if fn is None:
-                continue
-            try:
-                res = fn()
-                if inspect.isawaitable(res):
-                    res = await res
-                names = [
-                    getattr(t, "name", None)
-                    or (t.get("name") if isinstance(t, dict) else str(t))
-                    for t in (res or [])
-                ]
-            except Exception as exc:  # noqa: BLE001
-                names = f"<list failed: {exc!r}>"
-            break
-        log(f"MCP server prefix={prefix!r} tools={names}")
+        try:
+            tools = await server.list_tools()
+            names = [getattr(t, "name", str(t)) for t in tools]
+        except Exception as exc:  # noqa: BLE001 - discovery is diagnostic only
+            names = f"<list_tools failed: {exc!r}>"
+        log(f"MCP server {prefix!r} tools={names}")
 
 
-def _emit_tool_activity(result: Any) -> None:
-    """Walk the run's message history and emit Claude-style tool_use /
-    tool_result blocks so tool calls are visible to gh-aw and in the log."""
-    try:
-        from pydantic_ai.messages import ToolCallPart, ToolReturnPart
-    except Exception as exc:  # noqa: BLE001
-        log(f"cannot import message parts for tool activity: {exc!r}")
-        return
-    msgs = []
-    for attr in ("all_messages", "new_messages"):
-        fn = getattr(result, attr, None)
-        if callable(fn):
-            try:
-                msgs = fn()
-                break
-            except Exception:  # noqa: BLE001
-                continue
+def emit_tool_activity(messages: list[Any]) -> int:
+    """Emit Claude-style tool_use / tool_result blocks from the run's message
+    history so tool calls are visible to gh-aw's parser and in the log.
+    Returns the number of tool calls observed."""
     tool_calls = 0
-    for m in msgs or []:
-        for part in getattr(m, "parts", []) or []:
+    for message in messages:
+        for part in getattr(message, "parts", []):
             if isinstance(part, ToolCallPart):
                 tool_calls += 1
                 emit(
@@ -401,17 +277,15 @@ def _emit_tool_activity(result: Any) -> None:
                             "content": [
                                 {
                                     "type": "tool_use",
-                                    "id": getattr(part, "tool_call_id", "") or "",
-                                    "name": getattr(part, "tool_name", "") or "",
-                                    "input": getattr(part, "args", None)
-                                    if not callable(getattr(part, "args_as_dict", None))
-                                    else part.args_as_dict(),
+                                    "id": part.tool_call_id or "",
+                                    "name": part.tool_name or "",
+                                    "input": part.args_as_dict(),
                                 }
                             ],
                         },
                     }
                 )
-                log(f"tool_use: {getattr(part, 'tool_name', '?')}")
+                log(f"tool_use: {part.tool_name}")
             elif isinstance(part, ToolReturnPart):
                 emit(
                     {
@@ -421,19 +295,19 @@ def _emit_tool_activity(result: Any) -> None:
                             "content": [
                                 {
                                     "type": "tool_result",
-                                    "tool_use_id": getattr(part, "tool_call_id", "") or "",
-                                    "content": str(getattr(part, "content", "")),
+                                    "tool_use_id": part.tool_call_id or "",
+                                    "content": str(part.content),
                                 }
                             ],
                         },
                     }
                 )
-    log(f"tool calls observed: {tool_calls}")
+    return tool_calls
 
 
-def _log_safe_outputs_state() -> None:
-    """Did anything reach the gh-aw safe-outputs sink? This is the signal that
-    decides whether the downstream safe_outputs job runs."""
+def log_safe_outputs_state() -> None:
+    """Whether anything reached the gh-aw safe-outputs sink — this file is the
+    signal that gates the downstream safe_outputs job."""
     path = os.environ.get("GH_AW_SAFE_OUTPUTS")
     if not path:
         log("GH_AW_SAFE_OUTPUTS not set")
@@ -450,20 +324,50 @@ def _log_safe_outputs_state() -> None:
         log(f"  safe-output: {ln[:300]}")
 
 
+async def run(prompt: str, model: Any, label: str, mcp_servers: list[Any], session_id: str) -> int:
+    agent = Agent(model, toolsets=mcp_servers or None)
+    emit({"type": "system", "subtype": "init", "session_id": session_id, "model": label})
+
+    try:
+        if mcp_servers:
+            async with agent:
+                await log_mcp_tools(mcp_servers)
+                result = await agent.run(prompt)
+        else:
+            result = await agent.run(prompt)
+    except Exception as exc:  # noqa: BLE001 - surface as a Claude-style error result
+        log(f"agent run failed: {exc!r}")
+        emit_result(f"agent run failed: {exc}", usage=None, session_id=session_id, is_error=True)
+        return 1
+
+    tool_calls = emit_tool_activity(result.all_messages())
+    log(f"tool calls observed: {tool_calls}")
+
+    text = str(result.output or "")
+    emit({"type": "assistant", "message": {"role": "assistant", "content": text}})
+
+    usage = result.usage
+    if callable(usage):  # older pydantic-ai exposed usage() as a method
+        usage = usage()
+    emit_result(text, usage, session_id)
+    log_safe_outputs_state()
+    return 0
+
+
 def main() -> int:
-    args, extra = parse_args(sys.argv[1:])
+    args = parse_args(sys.argv[1:])
     configure_observability()
-    prompt = resolve_prompt(args, extra)
+    prompt = resolve_prompt(args)
     if not prompt.strip():
         log("empty prompt — nothing to do")
         emit_result("empty prompt", usage=None, session_id="none", is_error=True)
         return 1
-    model, model_label = build_model(args)
+    model, label = build_model(args)
     session_id = os.environ.get("GITHUB_RUN_ID", "") + "-" + uuid.uuid4().hex[:8]
-    mcp_servers = build_mcp_servers(args.mcp_config)
-    log(f"model={model_label} mcp_servers={len(mcp_servers)} prompt_chars={len(prompt)}")
+    mcp_servers = build_mcp_servers(args)
+    log(f"model={label} mcp_servers={len(mcp_servers)} prompt_chars={len(prompt)}")
     started = time.time()
-    rc = asyncio.run(run(prompt, model, model_label, mcp_servers, session_id))
+    rc = asyncio.run(run(prompt, model, label, mcp_servers, session_id))
     log(f"done in {time.time() - started:.1f}s rc={rc}")
     return rc
 

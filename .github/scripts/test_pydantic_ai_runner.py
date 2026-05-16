@@ -11,8 +11,6 @@ GH_AW_HARNESS_LIVE_MODEL.  No credentials are stored in this repo.
 Run:  uv run --with pytest pytest .github/scripts/test_pydantic_ai_runner.py
 """
 
-from __future__ import annotations
-
 import importlib.machinery
 import importlib.util
 import io
@@ -61,83 +59,91 @@ GHAW_ARGV = [
 
 
 def test_parses_full_claude_argv_without_error():
-    args, extra = har.parse_args([*GHAW_ARGV, "do the thing"])
-    assert args.output_format == "stream-json"
+    args = har.parse_args([*GHAW_ARGV, "do the thing"])
     assert args.mcp_config == "/tmp/mcp-servers.json"
     assert args.prompt_file == "/tmp/gh-aw/aw-prompts/prompt.txt"
-    assert args.print is True
+    assert args.prompt_positional == "do the thing"
 
 
 def test_unknown_future_claude_flags_are_tolerated():
-    # gh-aw / Claude may add flags later; the harness must not crash.
-    args, extra = har.parse_args([*GHAW_ARGV, "--some-future-flag", "x", "prompt"])
-    assert "--some-future-flag" in extra
+    # gh-aw / Claude may add flags later; the harness must not crash, and the
+    # trailing prompt positional is still recovered.
+    args = har.parse_args([*GHAW_ARGV, "--some-future-flag", "x", "prompt"])
+    assert args.prompt_positional == "prompt"
 
 
 def test_prompt_recovered_from_trailing_positional():
-    args, extra = har.parse_args([*GHAW_ARGV, "Investigate the failing CI run."])
-    assert har.resolve_prompt(args, extra) == "Investigate the failing CI run."
+    args = har.parse_args([*GHAW_ARGV, "Investigate the failing CI run."])
+    assert har.resolve_prompt(args) == "Investigate the failing CI run."
 
 
 def test_prompt_falls_back_to_prompt_file(tmp_path):
     pf = tmp_path / "prompt.txt"
     pf.write_text("from file", encoding="utf-8")
-    args, extra = har.parse_args(["--prompt-file", str(pf)])
-    assert har.resolve_prompt(args, extra) == "from file"
+    args = har.parse_args(["--prompt-file", str(pf)])
+    assert har.resolve_prompt(args) == "from file"
 
 
 def test_prompt_falls_back_to_env(tmp_path, monkeypatch):
     pf = tmp_path / "p.txt"
     pf.write_text("from env path", encoding="utf-8")
     monkeypatch.setenv("GH_AW_PROMPT", str(pf))
-    args, extra = har.parse_args(["--print"])
-    assert har.resolve_prompt(args, extra) == "from env path"
+    args = har.parse_args(["--print"])
+    assert har.resolve_prompt(args) == "from env path"
 
 
 def test_model_defaults_to_anthropic(monkeypatch):
-    for v in ("GH_AW_HARNESS_MODEL", "GH_AW_MODEL_AGENT_CLAUDE", "ANTHROPIC_MODEL", "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"):
+    for v in (
+        "GH_AW_HARNESS_MODEL",
+        "GH_AW_MODEL_AGENT_CLAUDE",
+        "ANTHROPIC_MODEL",
+        "OPENAI_BASE_URL",
+        "ANTHROPIC_BASE_URL",
+    ):
         monkeypatch.delenv(v, raising=False)
-    args, _ = har.parse_args(["--print"])
+    args = har.parse_args(["--print"])
     model, label = har.build_model(args)
-    assert model == "anthropic:claude-sonnet-4-5"
     assert label == "anthropic:claude-sonnet-4-5"
+    assert model.__class__.__name__ == "AnthropicModel"
 
 
 def test_model_openai_prefix_builds_openai_model(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-    args, _ = har.parse_args(["--model", "openai:gpt-4o-mini"])
+    args = har.parse_args(["--model", "openai:gpt-4o-mini"])
     model, label = har.build_model(args)
     assert label == "openai-compatible:gpt-4o-mini"
-    assert model.__class__.__name__ in ("OpenAIChatModel", "OpenAIModel")
+    assert model.__class__.__name__ == "OpenAIChatModel"
 
 
 def test_openai_base_url_triggers_openai_compatible(monkeypatch):
-    # An OpenAI-compatible endpoint (CanopyWave/vLLM/Together) with a bare model id.
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://inference.canopywave.io/v1")
+    # An OpenAI-compatible endpoint (vLLM/Together/etc.) with a bare model id.
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setenv("GH_AW_HARNESS_MODEL", "moonshotai/kimi-k2.6")
-    args, _ = har.parse_args(["--print"])
+    monkeypatch.setenv("GH_AW_HARNESS_MODEL", "some/model")
+    args = har.parse_args(["--print"])
     model, label = har.build_model(args)
-    assert label == "openai-compatible:moonshotai/kimi-k2.6"
-    assert model.__class__.__name__ in ("OpenAIChatModel", "OpenAIModel")
+    assert label == "openai-compatible:some/model"
+    assert model.__class__.__name__ == "OpenAIChatModel"
 
 
-def test_anthropic_base_url_treated_as_openai_compatible(monkeypatch):
+def test_anthropic_base_url_builds_anthropic_model(monkeypatch):
     # Under the gh-aw claude engine the custom endpoint arrives as
     # ANTHROPIC_BASE_URL and the key is proxy-injected (no *_API_KEY in env).
     for v in ("OPENAI_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GH_AW_HARNESS_API_KEY"):
         monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://inference.canopywave.io/v1")
-    monkeypatch.setenv("GH_AW_HARNESS_MODEL", "moonshotai/kimi-k2.6")
-    args, _ = har.parse_args(["--print"])
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.minimax.io/anthropic")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "placeholder")
+    monkeypatch.setenv("GH_AW_HARNESS_MODEL", "MiniMax-M2.7-highspeed")
+    args = har.parse_args(["--print"])
     model, label = har.build_model(args)
-    assert label == "openai-compatible:moonshotai/kimi-k2.6"
-    assert model.__class__.__name__ in ("OpenAIChatModel", "OpenAIModel")
+    assert label == "anthropic:MiniMax-M2.7-highspeed"
+    assert model.__class__.__name__ == "AnthropicModel"
 
 
 def test_mcp_missing_config_degrades_gracefully():
-    assert har.build_mcp_servers("/no/such/file.json") == []
+    assert har.build_mcp_servers(har.Args(mcp_config="/no/such/file.json")) == []
 
 
 def test_mcp_translates_stdio_and_http(tmp_path):
@@ -157,8 +163,7 @@ def test_mcp_translates_stdio_and_http(tmp_path):
         ),
         encoding="utf-8",
     )
-    servers = har.build_mcp_servers(str(cfg))
-    # Both servers should translate into pydantic-ai MCP server objects.
+    servers = har.build_mcp_servers(har.Args(mcp_config=str(cfg)))
     assert len(servers) == 2
     names = sorted(s.__class__.__name__ for s in servers)
     assert names == ["MCPServerStdio", "MCPServerStreamableHTTP"]
@@ -209,12 +214,12 @@ def test_live_openai_compatible_endpoint(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", os.environ["GH_AW_HARNESS_LIVE_API_KEY"])
     monkeypatch.setenv(
         "OPENAI_BASE_URL",
-        os.environ.get("GH_AW_HARNESS_LIVE_BASE_URL", "https://inference.canopywave.io/v1"),
+        os.environ.get("GH_AW_HARNESS_LIVE_BASE_URL", "https://example.test/v1"),
     )
-    model = os.environ.get("GH_AW_HARNESS_LIVE_MODEL", "moonshotai/kimi-k2.6")
+    model = os.environ.get("GH_AW_HARNESS_LIVE_MODEL", "gpt-4o-mini")
     # Exercise the model path without the MCP gateway (not available outside a
     # gh-aw run): drop the --mcp-config <path> pair from the gh-aw argv.
-    argv = [a for a in GHAW_ARGV]
+    argv = list(GHAW_ARGV)
     i = argv.index("--mcp-config")
     del argv[i : i + 2]
     argv += ["--model", f"openai:{model}", "Reply with exactly: HARNESS_OK"]
