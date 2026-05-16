@@ -15,10 +15,10 @@ permissions:
 network:
   allowed:
     - defaults
-    # CanopyWave host comes from the ${{ vars.OPENAI_BASE_URL }} expression,
+    # The provider host comes from the ${{ vars.OPENAI_BASE_URL }} expression,
     # which gh-aw cannot resolve into the compile-time firewall allowlist, so
     # it must be listed explicitly (not a secret; it already appears in logs).
-    - inference.canopywave.io
+    - api.minimax.io
 # We register as the built-in `claude` engine and only override `command`, so
 # gh-aw runs its full Claude proxy + credential-injection machinery for us.
 # Per the gh-aw auth docs, a custom Anthropic-compatible endpoint is supported
