@@ -121,9 +121,10 @@ Work step by step, using your tools (do not guess — actually call them):
 5. Use the `read_file` tool to read the first 5 lines of `go.mod` and quote the
    `module` line.
 6. Use a GitHub tool to fetch this pull request's title and quote it back.
-7. Post **one** short PR comment summarizing the above (banner, repo, the
-   workflow count, the PR title) so the safe-outputs write path is exercised
-   end-to-end.
+7. You **must** call the `add_comment` safe-output tool exactly once to post a
+   short PR comment summarizing the above (banner, repo, the workflow count,
+   the `go.mod` module, the PR title). Do not just print the summary — the run
+   only counts as passing if the `add_comment` tool is actually called.
 
 Keep the final message under ~250 words. Do not modify any tracked files
 (scratch writes under `/tmp` are fine).

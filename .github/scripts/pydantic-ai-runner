@@ -193,12 +193,17 @@ def build_mcp_servers(args: Args) -> list[Any]:
 
     servers: list[Any] = []
     for name, spec in (cfg.get("mcpServers") or {}).items():
+        # No tool_prefix: gh-aw injects safe-output instructions that reference
+        # the canonical MCP tool names (e.g. `add_comment`). Prefixing renames
+        # them to `<server>_add_comment`, which the model then calls only
+        # sometimes — the cause of intermittent comment posting. The only real
+        # MCP server here is `safeoutputs` (GitHub is gateway-launched and
+        # skipped below), so there is no name-collision reason to prefix.
         if spec.get("type") in ("http", "sse") or spec.get("url"):
             servers.append(
                 MCPServerStreamableHTTP(
                     url=spec["url"],
                     headers=spec.get("headers") or None,
-                    tool_prefix=name,
                 )
             )
         elif spec.get("command"):
@@ -207,7 +212,6 @@ def build_mcp_servers(args: Args) -> list[Any]:
                     command=spec["command"],
                     args=spec.get("args", []),
                     env={**os.environ, **(spec.get("env") or {})},
-                    tool_prefix=name,
                 )
             )
         else:
