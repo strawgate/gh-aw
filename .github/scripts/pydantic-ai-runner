@@ -79,6 +79,32 @@ def resolve_prompt(args: argparse.Namespace, extra_positionals: list[str]) -> st
     return ""
 
 
+def _awf_proxy_base_url(provider: str) -> str | None:
+    """Return the in-cluster AWF api-proxy base URL for `provider`, or None.
+
+    gh-aw's credential-injecting proxy runs at e.g. http://api-proxy:10001
+    (Anthropic). The agent MUST send requests there — the proxy swaps the
+    ANTHROPIC_AUTH_TOKEN placeholder for the real key and forwards to the
+    configured upstream + base-path. Talking to the upstream directly bypasses
+    credential injection (401) and the base-path rewrite (404). claude_harness
+    writes the endpoint map to awf-reflect.json before invoking us.
+    """
+    path = os.environ.get(
+        "GH_AW_AWF_REFLECT_FILE", "/tmp/gh-aw/sandbox/firewall/awf-reflect.json"
+    )
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    for ep in data.get("endpoints", []):
+        if ep.get("provider") == provider and ep.get("configured") and ep.get(
+            "base_url"
+        ):
+            return ep["base_url"]
+    return None
+
+
 def build_model(args: argparse.Namespace) -> tuple[Any, str]:
     """Return (model, label). gh-aw passes Claude-style model env, but the
     harness also supports any OpenAI-compatible endpoint (e.g. CanopyWave,
@@ -135,15 +161,25 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
         label = f"openai-compatible:{model_name}"
         return _OpenAI(model_name, provider=OpenAIProvider(**prov_kwargs)), label
 
-    # Anthropic protocol. Under gh-aw, point at the custom ANTHROPIC_BASE_URL
-    # (e.g. https://api.minimax.io/anthropic) with the proxy placeholder key.
+    # Anthropic protocol. Under gh-aw, send to the in-cluster api-proxy (which
+    # injects the real key via the placeholder swap and forwards to the
+    # configured upstream + base-path) rather than the upstream directly —
+    # talking to the upstream bypasses credential injection. Fall back to
+    # ANTHROPIC_BASE_URL for local / non-proxied use.
     if anthropic_base or provider == "anthropic":
         from pydantic_ai.models.anthropic import AnthropicModel
         from pydantic_ai.providers.anthropic import AnthropicProvider
 
+        proxy_base = _awf_proxy_base_url("anthropic")
+        client_base = proxy_base or anthropic_base
+        print(
+            f"[pydantic-ai-harness] anthropic base_url={client_base} "
+            f"(proxy={'yes' if proxy_base else 'no'})",
+            file=sys.stderr,
+        )
         prov_kwargs = {"api_key": api_key}
-        if anthropic_base:
-            prov_kwargs["base_url"] = anthropic_base
+        if client_base:
+            prov_kwargs["base_url"] = client_base
         label = f"anthropic:{model_name}"
         return AnthropicModel(model_name, provider=AnthropicProvider(**prov_kwargs)), label
 
