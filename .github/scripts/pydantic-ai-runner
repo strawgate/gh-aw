@@ -315,6 +315,7 @@ async def run(
     try:
         if mcp_servers:
             async with agent:
+                await _log_mcp_tools(mcp_servers)
                 result = await agent.run(prompt)
         else:
             result = await agent.run(prompt)
@@ -322,6 +323,10 @@ async def run(
         log(f"agent run failed: {exc!r}")
         emit_result(f"agent run failed: {exc}", usage=None, session_id=session_id, is_error=True)
         return 1
+
+    # Surface tool activity as Claude-style stream-json so gh-aw's log parser
+    # shows it and we can see whether the agent actually drove safe-outputs.
+    _emit_tool_activity(result)
 
     text = str(getattr(result, "output", "") or "")
     emit({"type": "assistant", "message": {"role": "assistant", "content": text}})
@@ -335,7 +340,114 @@ async def run(
     except Exception:  # noqa: BLE001
         usage = None
     emit_result(text, usage, session_id)
+    _log_safe_outputs_state()
     return 0
+
+
+async def _log_mcp_tools(mcp_servers: list[Any]) -> None:
+    """Best-effort: log the tool names each connected MCP server exposes, so a
+    missing/renamed safe-outputs tool is obvious in the log."""
+    import inspect
+
+    for server in mcp_servers:
+        prefix = getattr(server, "tool_prefix", "?")
+        names: list[str] | str = "<no list_tools api>"
+        for attr in ("list_tools", "get_tools"):
+            fn = getattr(server, attr, None)
+            if fn is None:
+                continue
+            try:
+                res = fn()
+                if inspect.isawaitable(res):
+                    res = await res
+                names = [
+                    getattr(t, "name", None)
+                    or (t.get("name") if isinstance(t, dict) else str(t))
+                    for t in (res or [])
+                ]
+            except Exception as exc:  # noqa: BLE001
+                names = f"<list failed: {exc!r}>"
+            break
+        log(f"MCP server prefix={prefix!r} tools={names}")
+
+
+def _emit_tool_activity(result: Any) -> None:
+    """Walk the run's message history and emit Claude-style tool_use /
+    tool_result blocks so tool calls are visible to gh-aw and in the log."""
+    try:
+        from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+    except Exception as exc:  # noqa: BLE001
+        log(f"cannot import message parts for tool activity: {exc!r}")
+        return
+    msgs = []
+    for attr in ("all_messages", "new_messages"):
+        fn = getattr(result, attr, None)
+        if callable(fn):
+            try:
+                msgs = fn()
+                break
+            except Exception:  # noqa: BLE001
+                continue
+    tool_calls = 0
+    for m in msgs or []:
+        for part in getattr(m, "parts", []) or []:
+            if isinstance(part, ToolCallPart):
+                tool_calls += 1
+                emit(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "id": getattr(part, "tool_call_id", "") or "",
+                                    "name": getattr(part, "tool_name", "") or "",
+                                    "input": getattr(part, "args", None)
+                                    if not callable(getattr(part, "args_as_dict", None))
+                                    else part.args_as_dict(),
+                                }
+                            ],
+                        },
+                    }
+                )
+                log(f"tool_use: {getattr(part, 'tool_name', '?')}")
+            elif isinstance(part, ToolReturnPart):
+                emit(
+                    {
+                        "type": "user",
+                        "message": {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": getattr(part, "tool_call_id", "") or "",
+                                    "content": str(getattr(part, "content", "")),
+                                }
+                            ],
+                        },
+                    }
+                )
+    log(f"tool calls observed: {tool_calls}")
+
+
+def _log_safe_outputs_state() -> None:
+    """Did anything reach the gh-aw safe-outputs sink? This is the signal that
+    decides whether the downstream safe_outputs job runs."""
+    path = os.environ.get("GH_AW_SAFE_OUTPUTS")
+    if not path:
+        log("GH_AW_SAFE_OUTPUTS not set")
+        return
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = fh.read()
+    except OSError as exc:
+        log(f"GH_AW_SAFE_OUTPUTS unreadable ({path}): {exc!r}")
+        return
+    lines = [ln for ln in data.splitlines() if ln.strip()]
+    log(f"GH_AW_SAFE_OUTPUTS={path} entries={len(lines)} bytes={len(data)}")
+    for ln in lines[:5]:
+        log(f"  safe-output: {ln[:300]}")
 
 
 def main() -> int:
