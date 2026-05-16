@@ -117,13 +117,17 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
         if base_url:
             prov_kwargs["base_url"] = base_url
         # Under the gh-aw claude engine the real key is injected by the AWF
-        # api-proxy and ANTHROPIC_API_KEY/OPENAI_API_KEY are excluded from this
-        # container, so the placeholder lets the SDK proceed. For local runs
-        # any of these env vars supplies the real key directly.
+        # api-proxy: it recognizes the placeholder it set in-container
+        # (ANTHROPIC_AUTH_TOKEN) on the outgoing request and swaps in the real
+        # key before forwarding to the target. So we must send THAT placeholder
+        # as the bearer token — a made-up string is not recognized/swapped and
+        # the upstream returns 401 "No API key found in request". For local
+        # runs the real key env vars supply the key directly.
         api_key = (
             os.environ.get("GH_AW_HARNESS_API_KEY")
             or os.environ.get("OPENAI_API_KEY")
             or os.environ.get("ANTHROPIC_API_KEY")
+            or os.environ.get("ANTHROPIC_AUTH_TOKEN")
             or "gh-aw-proxy-injected"
         )
         prov_kwargs["api_key"] = api_key
