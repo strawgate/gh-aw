@@ -15,18 +15,18 @@ permissions:
 network:
   allowed:
     - defaults
-    # The provider host comes from the ${{ vars.OPENAI_BASE_URL }} expression,
-    # which gh-aw cannot resolve into the compile-time firewall allowlist, so
-    # it must be listed explicitly (not a secret; it already appears in logs).
+    # ANTHROPIC_BASE_URL is a compile-time literal (below) so gh-aw already
+    # auto-allowlists the host; this explicit entry is a harmless safety net.
     - api.minimax.io
 # We register as the built-in `claude` engine and only override `command`, so
 # gh-aw runs its full Claude proxy + credential-injection machinery for us.
-# Per the gh-aw auth docs, a custom Anthropic-compatible endpoint is supported
-# by setting ANTHROPIC_BASE_URL in engine.env; ANTHROPIC_API_KEY is the
-# engine's own provider secret (injected by the AWF api-proxy, excluded from
-# the agent container). We map the CanopyWave OpenAI-compatible secret/vars
-# onto those names. The harness treats ANTHROPIC_BASE_URL as the
-# OpenAI-compatible base URL (CanopyWave speaks the OpenAI protocol).
+# ANTHROPIC_BASE_URL MUST be a compile-time literal (not a ${{ vars.* }}
+# expression): gh-aw derives the api-proxy target host AND the
+# `--anthropic-api-base-path` from its parsed URL path at compile time. With a
+# vars expression the path can't be parsed, so the proxy drops the `/anthropic`
+# prefix and the upstream returns 404. Only ANTHROPIC_API_KEY stays a secret
+# (injected by the AWF api-proxy, excluded from the agent container). MiniMax
+# exposes an Anthropic-compatible API at https://api.minimax.io/anthropic.
 runtimes:
   uv: {}
 engine:
@@ -37,7 +37,7 @@ engine:
   # the workspace harness (uv READS the file, so no-exec/exec-bit is moot).
   command: /tmp/gh-aw/bin/pydantic-ai-runner-launch
   env:
-    ANTHROPIC_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+    ANTHROPIC_BASE_URL: https://api.minimax.io/anthropic
     ANTHROPIC_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     GH_AW_HARNESS_MODEL: ${{ vars.GH_AW_HARNESS_MODEL }}
 tools:
