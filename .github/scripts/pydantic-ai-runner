@@ -129,21 +129,37 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
         label = f"openai-compatible:{model_name}"
         return _OpenAI(model_name, provider=OpenAIProvider(**prov_kwargs)), label
 
-    # Anthropic path: env-driven, exactly like the stock Claude Code CLI. The
-    # anthropic SDK natively reads ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN
-    # (and ANTHROPIC_API_KEY); gh-aw's transparent firewall proxy handles
-    # credential injection and base-path rewrite. Returning the bare model
-    # string lets pydantic-ai build the default env-driven Anthropic client.
-    has_auth = bool(
-        os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
+    # Anthropic path. gh-aw already points ANTHROPIC_BASE_URL at its in-cluster
+    # transparent proxy and sets ANTHROPIC_AUTH_TOKEN (placeholder, swapped by
+    # the proxy) — exactly the Claude Code CLI contract. pydantic-ai's default
+    # AnthropicProvider, however, hard-requires ANTHROPIC_API_KEY and ignores
+    # ANTHROPIC_AUTH_TOKEN, so build the anthropic client explicitly: Bearer
+    # auth_token (like the CLI) + base_url from the env (the proxy). No routing
+    # or credential logic here — the firewall proxy does injection.
+    from anthropic import AsyncAnthropic
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+
+    auth_token = (
+        os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        or os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("GH_AW_HARNESS_API_KEY")
+        or "gh-aw-proxy-injected"
     )
+    client_kwargs: dict[str, Any] = {"auth_token": auth_token}
+    if anthropic_base:
+        client_kwargs["base_url"] = anthropic_base
     print(
-        f"[pydantic-ai-harness] anthropic env-driven base_url="
-        f"{anthropic_base or '(default)'} auth={'yes' if has_auth else 'no'}",
+        f"[pydantic-ai-harness] anthropic base_url="
+        f"{anthropic_base or '(default)'} auth=token",
         file=sys.stderr,
     )
+    client = AsyncAnthropic(**client_kwargs)
     label = raw if ":" in raw else f"anthropic:{model_name}"
-    return label, label
+    return (
+        AnthropicModel(model_name, provider=AnthropicProvider(anthropic_client=client)),
+        label,
+    )
 
 
 # --------------------------------------------------------------------------- #
