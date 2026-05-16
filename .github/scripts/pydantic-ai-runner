@@ -99,13 +99,29 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
 
     # When registered as the gh-aw `claude` engine with an overridden command,
     # gh-aw provides the custom endpoint via ANTHROPIC_BASE_URL and injects the
-    # credential through the AWF api-proxy (so ANTHROPIC_API_KEY is excluded
-    # from this container). CanopyWave speaks the OpenAI protocol, so treat
-    # ANTHROPIC_BASE_URL as an OpenAI-compatible base URL.
-    base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get(
-        "ANTHROPIC_BASE_URL"
+    # credential through the AWF api-proxy (Anthropic protocol: it recognizes
+    # the in-container placeholder ANTHROPIC_AUTH_TOKEN on the outgoing request
+    # and swaps in the real key). So under gh-aw we must speak the *Anthropic*
+    # protocol to that base URL. An explicit `openai:` prefix or OPENAI_BASE_URL
+    # selects the OpenAI-compatible path instead (local / non-gh-aw use).
+    openai_base = os.environ.get("OPENAI_BASE_URL")
+    anthropic_base = os.environ.get("ANTHROPIC_BASE_URL")
+
+    # The AWF api-proxy swaps this placeholder for the real key; a made-up
+    # string is not recognized and the upstream returns 401. Local runs supply
+    # the real key directly via the *_API_KEY env vars.
+    api_key = (
+        os.environ.get("GH_AW_HARNESS_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        or "gh-aw-proxy-injected"
     )
-    if provider == "openai" or (base_url and provider in (None, "openai")):
+
+    use_openai = provider == "openai" or (
+        provider != "anthropic" and openai_base is not None and anthropic_base is None
+    )
+    if use_openai:
         from pydantic_ai.providers.openai import OpenAIProvider
 
         try:
@@ -113,28 +129,25 @@ def build_model(args: argparse.Namespace) -> tuple[Any, str]:
         except ImportError:  # older pydantic-ai
             from pydantic_ai.models.openai import OpenAIModel as _OpenAI
 
-        prov_kwargs: dict[str, Any] = {}
-        if base_url:
-            prov_kwargs["base_url"] = base_url
-        # Under the gh-aw claude engine the real key is injected by the AWF
-        # api-proxy: it recognizes the placeholder it set in-container
-        # (ANTHROPIC_AUTH_TOKEN) on the outgoing request and swaps in the real
-        # key before forwarding to the target. So we must send THAT placeholder
-        # as the bearer token — a made-up string is not recognized/swapped and
-        # the upstream returns 401 "No API key found in request". For local
-        # runs the real key env vars supply the key directly.
-        api_key = (
-            os.environ.get("GH_AW_HARNESS_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or os.environ.get("ANTHROPIC_API_KEY")
-            or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-            or "gh-aw-proxy-injected"
-        )
-        prov_kwargs["api_key"] = api_key
+        prov_kwargs: dict[str, Any] = {"api_key": api_key}
+        if openai_base or anthropic_base:
+            prov_kwargs["base_url"] = openai_base or anthropic_base
         label = f"openai-compatible:{model_name}"
         return _OpenAI(model_name, provider=OpenAIProvider(**prov_kwargs)), label
 
-    # Native Anthropic (Claude-style env + ANTHROPIC_API_KEY).
+    # Anthropic protocol. Under gh-aw, point at the custom ANTHROPIC_BASE_URL
+    # (e.g. https://api.minimax.io/anthropic) with the proxy placeholder key.
+    if anthropic_base or provider == "anthropic":
+        from pydantic_ai.models.anthropic import AnthropicModel
+        from pydantic_ai.providers.anthropic import AnthropicProvider
+
+        prov_kwargs = {"api_key": api_key}
+        if anthropic_base:
+            prov_kwargs["base_url"] = anthropic_base
+        label = f"anthropic:{model_name}"
+        return AnthropicModel(model_name, provider=AnthropicProvider(**prov_kwargs)), label
+
+    # Native Anthropic (Claude-style env + ANTHROPIC_API_KEY, default base URL).
     return (raw if ":" in raw else f"anthropic:{model_name}"), (
         raw if ":" in raw else f"anthropic:{model_name}"
     )
