@@ -208,6 +208,34 @@ def test_emit_result_matches_claude_stream_json_schema():
         assert k in obj["usage"]
 
 
+def test_emit_result_passes_through_turns_and_duration():
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        har.emit_result("x", usage=None, session_id="s", num_turns=3, duration_ms=1234)
+    obj = json.loads(buf.getvalue().strip())
+    assert obj["num_turns"] == 3
+    assert obj["duration_ms"] == 1234
+
+
+def test_first_env_precedence(monkeypatch):
+    for v in ("A", "B", "C"):
+        monkeypatch.delenv(v, raising=False)
+    assert har._first_env("A", "B", "C") is None
+    monkeypatch.setenv("B", "vb")
+    monkeypatch.setenv("C", "vc")
+    assert har._first_env("A", "B", "C") == "vb"
+
+
+def test_use_openai_provider_selection():
+    # explicit prefixes win
+    assert har._use_openai_provider("openai", None, None) is True
+    assert har._use_openai_provider("anthropic", "http://x", None) is False
+    # no prefix: only OPENAI_BASE_URL set -> openai; gh-aw (anthropic set) -> anthropic
+    assert har._use_openai_provider("", "http://x", None) is True
+    assert har._use_openai_provider("", None, "http://proxy") is False
+    assert har._use_openai_provider("", None, None) is False
+
+
 def test_emit_result_error_subtype():
     buf = io.StringIO()
     with redirect_stdout(buf):

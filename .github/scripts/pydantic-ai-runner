@@ -40,7 +40,8 @@ import logfire
 from anthropic import AsyncAnthropic
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
-from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import ModelResponse, ToolCallPart, ToolReturnPart
+from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
@@ -97,62 +98,63 @@ def resolve_prompt(args: Args) -> str:
     return ""
 
 
-def build_model(args: Args) -> tuple[Any, str]:
-    """Return (model, label).
+def _first_env(*names: str) -> str | None:
+    """First non-empty value among the given environment variables."""
+    for n in names:
+        v = os.environ.get(n)
+        if v:
+            return v
+    return None
 
-    Under gh-aw the harness is treated like the stock Claude Code CLI: gh-aw
-    sets ANTHROPIC_BASE_URL (its in-cluster transparent proxy) and
+
+def _use_openai_provider(provider: str, openai_base: str | None, anthropic_base: str | None) -> bool:
+    """Select the OpenAI-compatible path for an explicit ``openai:`` model
+    prefix, or when only OPENAI_BASE_URL is configured (local / non-gh-aw use).
+    Under gh-aw, ANTHROPIC_BASE_URL is set, so the Anthropic path is used."""
+    if provider == "openai":
+        return True
+    if provider == "anthropic":
+        return False
+    return openai_base is not None and anthropic_base is None
+
+
+def build_model(args: Args) -> tuple[Model, str]:
+    """Build the pydantic-ai model and a human-readable label.
+
+    Under gh-aw the harness behaves like the stock Claude Code CLI: gh-aw sets
+    ANTHROPIC_BASE_URL (its in-cluster transparent proxy) and
     ANTHROPIC_AUTH_TOKEN (a placeholder the proxy swaps for the real key), and
-    handles credential injection / base-path rewrite in the firewall. We just
+    performs credential injection / base-path rewrite in the firewall. So we
     speak the Anthropic protocol with a Bearer auth token, exactly like the
-    CLI. pydantic-ai's default AnthropicProvider hard-requires
-    ANTHROPIC_API_KEY and ignores ANTHROPIC_AUTH_TOKEN, so the client is built
-    explicitly. An explicit `openai:` prefix or OPENAI_BASE_URL selects an
-    OpenAI-compatible endpoint instead (local / non-gh-aw use).
+    CLI. pydantic-ai's default ``AnthropicProvider`` requires ANTHROPIC_API_KEY
+    and ignores ANTHROPIC_AUTH_TOKEN, so the client is constructed explicitly.
     """
     raw = (
         args.model
-        or os.environ.get("GH_AW_HARNESS_MODEL")
-        or os.environ.get("GH_AW_MODEL_AGENT_CLAUDE")
-        or os.environ.get("ANTHROPIC_MODEL")
+        or _first_env("GH_AW_HARNESS_MODEL", "GH_AW_MODEL_AGENT_CLAUDE", "ANTHROPIC_MODEL")
         or "claude-sonnet-4-5"
     )
     provider, _, model_name = raw.partition(":") if ":" in raw else ("", "", raw)
-
     openai_base = os.environ.get("OPENAI_BASE_URL")
     anthropic_base = os.environ.get("ANTHROPIC_BASE_URL")
 
-    if provider == "openai" or (
-        provider != "anthropic" and openai_base is not None and anthropic_base is None
-    ):
-        api_key = (
-            os.environ.get("GH_AW_HARNESS_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or os.environ.get("ANTHROPIC_API_KEY")
-            or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-            or PROXY_PLACEHOLDER
-        )
+    if _use_openai_provider(provider, openai_base, anthropic_base):
+        api_key = _first_env(
+            "GH_AW_HARNESS_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+        ) or PROXY_PLACEHOLDER
         base_url = openai_base or anthropic_base
         log(f"openai-compatible base_url={base_url or '(default)'}")
-        provider_obj = (
-            OpenAIProvider(api_key=api_key, base_url=base_url)
-            if base_url
-            else OpenAIProvider(api_key=api_key)
-        )
+        provider_obj = OpenAIProvider(api_key=api_key, base_url=base_url)
         return OpenAIChatModel(model_name, provider=provider_obj), f"openai-compatible:{model_name}"
 
-    auth_token = (
-        os.environ.get("ANTHROPIC_AUTH_TOKEN")
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("GH_AW_HARNESS_API_KEY")
-        or PROXY_PLACEHOLDER
-    )
+    auth_token = _first_env(
+        "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "GH_AW_HARNESS_API_KEY"
+    ) or PROXY_PLACEHOLDER
     log(f"anthropic base_url={anthropic_base or '(default)'} auth=token")
-    client = (
-        AsyncAnthropic(auth_token=auth_token, base_url=anthropic_base)
-        if anthropic_base
-        else AsyncAnthropic(auth_token=auth_token)
-    )
+    client = AsyncAnthropic(auth_token=auth_token, base_url=anthropic_base)
     label = raw if ":" in raw else f"anthropic:{model_name}"
     return AnthropicModel(model_name, provider=AnthropicProvider(anthropic_client=client)), label
 
@@ -347,7 +349,14 @@ def emit(obj: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def emit_result(text: str, usage: Any, session_id: str, is_error: bool = False) -> None:
+def emit_result(
+    text: str,
+    usage: Any,
+    session_id: str,
+    is_error: bool = False,
+    num_turns: int = 1,
+    duration_ms: int = 0,
+) -> None:
     def tok(*names: str) -> int:
         for n in names:
             v = getattr(usage, n, None)
@@ -362,8 +371,8 @@ def emit_result(text: str, usage: Any, session_id: str, is_error: bool = False) 
             "is_error": is_error,
             "result": text,
             "session_id": session_id,
-            "num_turns": 1,
-            "duration_ms": 0,
+            "num_turns": num_turns,
+            "duration_ms": duration_ms,
             "total_cost_usd": 0,
             "usage": {
                 "input_tokens": tok("input_tokens", "request_tokens"),
@@ -452,10 +461,11 @@ def log_safe_outputs_state() -> None:
         log(f"  safe-output: {ln[:300]}")
 
 
-async def run(prompt: str, model: Any, label: str, mcp_servers: list[Any], session_id: str) -> int:
+async def run(prompt: str, model: Model, label: str, mcp_servers: list[Any], session_id: str) -> int:
     agent = Agent(model, tools=NATIVE_TOOLS, toolsets=mcp_servers or None)
     emit({"type": "system", "subtype": "init", "session_id": session_id, "model": label})
 
+    started = time.perf_counter()
     try:
         if mcp_servers:
             async with agent:
@@ -465,19 +475,29 @@ async def run(prompt: str, model: Any, label: str, mcp_servers: list[Any], sessi
             result = await agent.run(prompt)
     except Exception as exc:  # noqa: BLE001 - surface as a Claude-style error result
         log(f"agent run failed: {exc!r}")
-        emit_result(f"agent run failed: {exc}", usage=None, session_id=session_id, is_error=True)
+        emit_result(
+            f"agent run failed: {exc}",
+            usage=None,
+            session_id=session_id,
+            is_error=True,
+            duration_ms=round((time.perf_counter() - started) * 1000),
+        )
         return 1
 
-    tool_calls = emit_tool_activity(result.all_messages())
-    log(f"tool calls observed: {tool_calls}")
+    duration_ms = round((time.perf_counter() - started) * 1000)
+    messages = result.all_messages()
+    tool_calls = emit_tool_activity(messages)
+    # One "turn" per model response (a request/response round trip).
+    num_turns = sum(isinstance(m, ModelResponse) for m in messages)
+    log(f"tool calls observed: {tool_calls}, turns: {num_turns}")
 
     text = str(result.output or "")
     emit({"type": "assistant", "message": {"role": "assistant", "content": text}})
 
     usage = result.usage
-    if callable(usage):  # older pydantic-ai exposed usage() as a method
+    if callable(usage):  # pydantic-ai <1.x exposed usage() as a method
         usage = usage()
-    emit_result(text, usage, session_id)
+    emit_result(text, usage, session_id, num_turns=num_turns, duration_ms=duration_ms)
     log_safe_outputs_state()
     return 0
 
